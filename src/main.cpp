@@ -29,11 +29,9 @@ int startJit(CPU &cpu) {
   0x31, 0x20, 0x12, 0x04, 0x12, 0x1c, 0x80, 0x40, 0x20, 0x10, 0x20, 0x40,
   0x80, 0x10
 };
-
-    
     
 
-    printf("Pointer %ld \n",&cpu.stack);
+    printf("Pointer %h \n",memory.memory.data());
     
     std::copy(maze_rom.begin(),maze_rom.end(),memory.memory.begin()+0x200);
 
@@ -47,7 +45,7 @@ int startJit(CPU &cpu) {
         }
         currentAddress = memory.jumpTable[currentAddress]->fn();
         cpu.printState();
-        std::cout<<currentAddress<<std::endl;
+        std::cout<<"Ret: "<< std::hex<<currentAddress<<std::endl;
         if(currentAddress == 0) break;
     }
     cpu.display.drawBytes();

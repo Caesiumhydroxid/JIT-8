@@ -12,7 +12,6 @@ class CPU{
         uint8_t regs[AMOUNT_REGISTERS] = {0};
         uint16_t stack[STACK_SIZE] = {0};
 
-        Display display;
         
         volatile uint16_t indexRegister = 0;
         volatile uint16_t pc = 0;
@@ -22,6 +21,7 @@ class CPU{
         volatile uint8_t soundTimer = 0;
         volatile uint8_t delayTimer = 0;
 
+        Display display;
         void printState();
 };
 

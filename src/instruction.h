@@ -160,26 +160,16 @@ void JMP_V0(Opcode instr, const CPU &cpu, BasicBlock* basicBlock ,asmjit::x86::C
 
 // Cxkk - Set Vx = random byte AND kk
 void RND(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
-    auto savedreg = cc.newUInt8();
-    cc.push(asmjit::x86::rax);
-    cc.push(asmjit::x86::rdx);
-    cc.push(asmjit::x86::rcx);
-    cc.push(asmjit::x86::r8);
-    cc.push(asmjit::x86::r9);
-    cc.push(asmjit::x86::r10);
-    cc.push(asmjit::x86::r11);
-    cc.call(asmjit::Imm(rand));
-    cc.mov(savedreg,asmjit::x86::al);
-    cc.pop(asmjit::x86::r11);
-    cc.pop(asmjit::x86::r10);
-    cc.pop(asmjit::x86::r9);
-    cc.pop(asmjit::x86::r8);
-    cc.pop(asmjit::x86::rcx);
-    cc.pop(asmjit::x86::rdx);
-    cc.mov(registers[instr.x()],savedreg);
-    cc.pop(asmjit::x86::rax);
+    auto lfsrReg = asmjit::x86::ptr_32(cpubase,offsetof(CPU, rng));
+    auto b = cc.newUInt32();
+    cc.mov(b,lfsrReg);
+    cc.and_(b,1);
+    cc.neg(b);
+    cc.and_(b,0xc3308398);
+    cc.shr(lfsrReg,1);
+    cc.xor_(lfsrReg,b);
+    cc.mov(registers[instr.x()].r8(),lfsrReg);
     cc.and_(registers[instr.x()],instr.byte());
-    savedreg.reset();
 }
 
 // Dxyn - Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
@@ -187,6 +177,7 @@ void DRW(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &mem,a
     auto simI = cc.newUIntPtr();
     auto simDisp = cc.newUIntPtr();
     auto loopCounter = cc.newUInt64();
+    
     auto indexRegisterValue = asmjit::x86::ptr_16(cpubase,offsetof(CPU, indexRegister));
 
     cc.mov(simDisp,reinterpret_cast<uint64_t>(cpu.display.data));
@@ -194,10 +185,12 @@ void DRW(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &mem,a
     cc.and_(loopCounter,0x1F);
     cc.shl(loopCounter,3);
 
-    cc.mov(simI,reinterpret_cast<uint64_t>(&mem.memory.data()[0]));
-    cc.add(simI,indexRegisterValue);
-    
-    
+    auto test = cc.newUInt16();
+    cc.mov(test.r64(),0);
+    cc.mov(test,indexRegisterValue);
+    cc.mov(simI,reinterpret_cast<uint64_t>(mem.memory.data()));
+    cc.add(simI,test.r64());
+
     auto rem = cc.newUInt8();
     auto div = cc.newUInt64();
     auto div2 = cc.newUInt64();
@@ -306,3 +299,4 @@ void LD_VX_I(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, c8::Memory &
 }
 
 #endif  // CHIP8_INSTRUCTIONS_H
+
