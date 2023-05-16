@@ -2,41 +2,37 @@
 #include <array>
 #include <iostream>
 #include <iterator>
+#include <vector>
+#include <fstream>
 #include "basicblock.h"
 #include "parser.h"
 #include "cpu.h"
 #include "memory.h"
 #include <SFML/Graphics.hpp>
 #include <cstdlib>
+#include "corax.h"
+#include "quirks.h"
+#include <unistd.h>
 using namespace asmjit;
 
 
-int startJit(CPU &cpu) {
+int startJit(CPU &cpu, std::vector<uint8_t> &rom) {
     JitRuntime rt;
-    
     c8::Memory memory;
     srand(time(NULL));
-    std::array<uint8_t,3*8>program {
-        0x60,64,
-        0x61,30,
-        0xA0,0x00,
-        0xD0,0x15,
-        0x10,0x00
+
+    std::array<uint8_t,10>program {
+        0xD0,0x05,
+        0xD0,0x05,
+        0x10,0x00,
     };
-    std::array<uint8_t,38> maze_rom ={
-  0x60, 0x00, 0x61, 0x00, 0xa2, 0x22, 0xc2, 0x01, 0x32, 0x01, 0xa2, 0x1e,
-  0xd0, 0x14, 0x70, 0x04, 0x30, 0x40, 0x12, 0x04, 0x60, 0x00, 0x71, 0x04,
-  0x31, 0x20, 0x12, 0x04, 0x12, 0x1c, 0x80, 0x40, 0x20, 0x10, 0x20, 0x40,
-  0x80, 0x10
-};
-    
 
     printf("Pointer %h \n",memory.memory.data());
     
-    std::copy(maze_rom.begin(),maze_rom.end(),memory.memory.begin()+0x200);
+    std::copy(rom.begin(),rom.end(),memory.memory.begin()+0x200);
 
     uint16_t currentAddress = 0x200;
-    for(int i=0;i<5000;i++){
+    for(int i=0;i<500000000;i++){
         if(memory.jumpTable[currentAddress] == NULL)
         {
             auto res = Parser::parseBasicBlock(memory.memory, currentAddress);
@@ -44,11 +40,15 @@ int startJit(CPU &cpu) {
             memory.jumpTable[currentAddress] = std::move(basicBlock);
         }
         currentAddress = memory.jumpTable[currentAddress]->fn();
-        cpu.printState();
-        std::cout<<"Ret: "<< std::hex<<currentAddress<<std::endl;
+        //cpu.printState();
+        //for(int i=0;i<10;i++){
+        //    std::cout << std::dec << unsigned(memory[i+cpu.indexRegister]) <<std::endl;
+        //}
+        //std::cout<<"Ret: "<< std::hex<<currentAddress<<std::endl;
+        //usleep(10000);
         if(currentAddress == 0) break;
     }
-    cpu.display.drawBytes();
+    //cpu.display.drawBytes();
     return 0;
 }
 
@@ -61,27 +61,58 @@ struct threadData
 
 int startSfml(struct threadData data);
 
-int main()
+int main(int argc, char *argv[])
 {
     CPU cpu;
-    sf::RenderWindow window(sf::VideoMode(640, 320), "My window");
-    struct threadData data = {&window, &cpu};
-    window.setActive(false);
-    sf::Thread thread(&startSfml,data);
-    thread.launch();
-    startJit(cpu);
+    std::ifstream file(argv[1], std::ios::binary);  // Replace "example.txt" with your file's path
+
+    if (file) {
+        // Find the file size
+        file.seekg(0, std::ios::end);
+        std::streampos fileSize = file.tellg();
+        file.seekg(0, std::ios::beg);
+
+        // Create a vector to hold the file contents
+        std::vector<uint8_t> buffer(fileSize);
+
+        // Read the file byte-wise into the vector
+        file.read(reinterpret_cast<char*>(buffer.data()), fileSize);
+
+        if (file) {
+            // File reading succeeded
+            std::cout << "File read successfully. Total bytes read: " << file.gcount() << std::endl;
+            sf::RenderWindow window(sf::VideoMode(640, 320), "My window");
+            struct threadData data = {&window, &cpu};
+            window.setActive(false);
+            sf::Thread thread(&startSfml,data);
+            thread.launch();
+            startJit(cpu,buffer);
+        } else {
+            // File reading failed
+            std::cerr << "Error reading file." << std::endl;
+        }
+
+        file.close();
+        
+    }
 }
 
 int startSfml(struct threadData data) {
     
     CPU* cpu = data.cpu;
     sf::RenderWindow* window = data.window;
+    window->setFramerateLimit(60);
     while (window->isOpen())
     {
-
         sf::Event event;
         while (window->pollEvent(event))
         {
+            if (event.type == sf::Event::KeyPressed){
+                cpu->setKeyState(event.key.code,true);
+            }
+            if (event.type == sf::Event::KeyReleased){
+                cpu->setKeyState(event.key.code,false);
+            }
             if (event.type == sf::Event::Closed)
                 window->close();
         }
@@ -101,6 +132,10 @@ int startSfml(struct threadData data) {
                     }
                 }
             }
+        }
+        if(cpu->delayTimer >= 1)
+        {
+            cpu->delayTimer--;
         }
         window->display();
     }

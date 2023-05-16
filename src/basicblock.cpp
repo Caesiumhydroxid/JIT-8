@@ -88,6 +88,7 @@ std::optional<asmjit::Label> BasicBlock::generateInstruction(c8::Opcode instr,
     
     using namespace c8::instruction;
     switch (parsedInstr) {
+        case Instruction::CLS:          CLS     (instr,cpu,this,cc,cpubase,registers); return {};
         case Instruction::RET:          RET     (instr,cpu,this,cc,cpubase,registers); return {};
         case Instruction::JMP:          JMP     (instr,this,cc,cpubase,registers); return {};
         case Instruction::CALL:         CALL    (instr,cpu,this,pc,cc,cpubase,registers); return {};
@@ -110,10 +111,15 @@ std::optional<asmjit::Label> BasicBlock::generateInstruction(c8::Opcode instr,
         case Instruction::JMP_V0:       JMP_V0    (instr, cpu, this ,cc,cpubase, registers); return {};
         case Instruction::RND:          RND       (instr,cpu,cpubase,cc,registers); return{};
         case Instruction::DRW:          DRW(instr,cpu,cpubase,mem,cc,registers); return{};
+        case Instruction::SKP:          return SKP(instr,cpu,cpubase,cc,registers);
+        case Instruction::SKNP:         return SKNP(instr,cpu,cpubase,cc,registers);
         case Instruction::LD_VX_DT:     LD_VX_DT  (instr,cpu,cpubase,cc,registers); return {};
+        case Instruction::LD_VX_K:      LD_VX_K   (instr,cpu,cpubase,cc,registers); return {};
         case Instruction::LD_DT:        LD_DT     (instr,cpu,cpubase,cc,registers); return {};
         case Instruction::LD_ST:        LD_ST     (instr,cpu,cpubase,cc,registers); return {};
         case Instruction::ADD_I_VX:     ADD_I_VX  (instr,cpu,cpubase,cc,registers); return {};
+        case Instruction::LD_F_VX:      LD_F_VX   (instr,cpu,cpubase,mem,cc,registers); return {};
+        case Instruction::LD_B_VX:      LD_B_VX   (instr,cpu,cpubase,mem,cc,registers); return {};
         case Instruction::LD_I_VX:      LD_I_VX   (instr,cpu,cpubase,mem,cc,registers); return {};
         case Instruction::LD_VX_I:      LD_VX_I   (instr,cpu,cpubase,mem,cc,registers); return {};
     }

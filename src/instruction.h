@@ -12,28 +12,42 @@
 namespace c8::instruction {
 
 // 00E0 - Clear the display.
+void CLS(Opcode instr, const CPU &cpu, BasicBlock* basicBlock ,asmjit::x86::Compiler &cc,asmjit::x86::Gp cpubase, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers)
+{
+    auto simDisp = cc.newUIntPtr();
+    cc.mov(simDisp,reinterpret_cast<uint64_t>(cpu.display.data));
+    for(int i=0;i<sizeof(cpu.display.data)/(64/8);i++)
+    {
+        cc.mov(asmjit::x86::ptr_64(simDisp,i*(64/8)),0);
+    }
 
+}
 
 // 00EE - Return from a subroutine.
 void RET(Opcode instr, const CPU &cpu, BasicBlock* basicBlock ,asmjit::x86::Compiler &cc,asmjit::x86::Gp cpubase, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers)
 {
+    basicBlock->generateEpilogue(cc,cpubase,registers);
     auto ptr = cc.newUIntPtr();
     auto stackPointer = asmjit::x86::ptr_16(cpubase,offsetof(CPU, sp));
+    auto stackMem = cc.newUIntPtr();
+    cc.xor_(stackMem,stackMem);
     cc.dec(stackPointer);
-    cc.mov(ptr,&cpu.stack);
-    cc.add(ptr,stackPointer);
-    cc.add(ptr,stackPointer);
-    basicBlock->generateEpilogue(cc,cpubase,registers);
-    cc.mov(asmjit::x86::rax, asmjit::x86::ptr_16(ptr));
-    cc.ret();
+    cc.mov(stackMem.r16(),stackPointer);
+    cc.shl(stackMem,1);
+    cc.mov(ptr,reinterpret_cast<uint64_t>(&cpu.stack[0]));
+    cc.add(ptr,stackMem);
+    auto val = cc.newUInt16();
+    cc.mov(val, asmjit::x86::ptr_16(ptr));
+    cc.ret(val);
 }
 
 // 1nnn - Jump to location nnn.
 void JMP(Opcode instr, BasicBlock* basicBlock ,asmjit::x86::Compiler &cc,asmjit::x86::Gp cpubase, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers)
 {
     basicBlock->generateEpilogue(cc,cpubase,registers);
-    cc.mov(asmjit::x86::rax,instr.address());
-    cc.ret();
+    auto retVal = cc.newUInt16();
+    cc.mov(retVal,instr.address());
+    cc.ret(retVal);
 }
 
 // 2nnn - Call subroutine at nnn.
@@ -41,14 +55,18 @@ void CALL(Opcode instr, const CPU &cpu, BasicBlock* basicBlock, uint16_t pc ,asm
 {
     auto ptr = cc.newUIntPtr();
     auto stackPointer = asmjit::x86::ptr_16(cpubase,offsetof(CPU, sp));
-    cc.mov(ptr,&cpu.stack);
-    cc.add(ptr,stackPointer);
-    cc.add(ptr,stackPointer);
+    auto stackMem = cc.newUIntPtr();
+    cc.xor_(stackMem,stackMem);
+    cc.mov(stackMem.r16(),stackPointer);
+    cc.shl(stackMem,1);
+    cc.mov(ptr,reinterpret_cast<uint64_t>(&cpu.stack[0]));
+    cc.add(ptr,stackMem);
     cc.mov(asmjit::x86::ptr_16(ptr), pc+2);
     cc.inc(stackPointer);
     basicBlock->generateEpilogue(cc,cpubase,registers);
-    cc.mov(asmjit::x86::rax, instr.address());
-    cc.ret();
+    auto retVal = cc.newUInt16();
+    cc.mov(retVal,instr.address());
+    cc.ret(retVal);
 }
 // 3xkk - Skip next instruction if Vx = kk.
 std::optional<asmjit::Label> SE_VX_KK(Opcode instr, const CPU &cpu, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers)
@@ -121,18 +139,22 @@ void SUB_VX_VY(Opcode instr, const CPU &cpu, asmjit::x86::Compiler &cc, const st
 // 8xy6 - Set Vx = Vx SHR 1.
 void SHR_VX(Opcode instr, const CPU &cpu, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
     cc.shr(registers[instr.x()],1);
+    cc.setc(registers[CPU::REG_F]);
 }
 
 // 8xy7 - Set Vx = Vy - Vx, set VF = NOT borrow.
 void SUBN_VX_VY(Opcode instr, const CPU &cpu, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
-    cc.sub(registers[instr.x()],registers[instr.y()]);
-    cc.setc(registers[CPU::REG_F]);
-    cc.neg(registers[instr.x()]);
+    auto tmp = cc.newUInt8();
+    cc.mov(tmp,registers[instr.y()]);
+    cc.sub(tmp,registers[instr.x()]);
+    cc.mov(registers[instr.x()],tmp);
+    cc.setnc(registers[CPU::REG_F]);
 }
 
 // 8xyE - Set Vx = Vx SHL 1.
 void SHL_VX(Opcode instr, const CPU &cpu, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
     cc.shl(registers[instr.x()],1);
+    cc.setc(registers[15]);
 }
 
 // 9xy0 - Skip next instruction if Vx != Vy.
@@ -152,10 +174,12 @@ void LD_I(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, asmjit::x86::Co
 
 // Bnnn - Program counter is set to nnn plus the value of V0.
 void JMP_V0(Opcode instr, const CPU &cpu, BasicBlock* basicBlock ,asmjit::x86::Compiler &cc,asmjit::x86::Gp cpubase, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
-    cc.mov(asmjit::x86::rax,registers[0]);
-    cc.add(asmjit::x86::rax,instr.address());
     basicBlock->generateEpilogue(cc,cpubase,registers);
-    cc.endFunc();
+    auto retVal = cc.newUInt16();
+    cc.xor_(retVal,retVal);
+    cc.mov(retVal.r8(),registers[0]);
+    cc.add(retVal,instr.address());
+    cc.ret(retVal);
 }
 
 // Cxkk - Set Vx = random byte AND kk
@@ -177,14 +201,14 @@ void DRW(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &mem,a
     auto simI = cc.newUIntPtr();
     auto simDisp = cc.newUIntPtr();
     auto loopCounter = cc.newUInt64();
-    
     auto indexRegisterValue = asmjit::x86::ptr_16(cpubase,offsetof(CPU, indexRegister));
-
+    cc.xor_(registers[CPU::REG_F],registers[CPU::REG_F]);
     cc.mov(simDisp,reinterpret_cast<uint64_t>(cpu.display.data));
+    cc.xor_(loopCounter,loopCounter);
     cc.mov(loopCounter.r8(),registers[instr.y()]);
-    cc.and_(loopCounter,0x1F);
     cc.shl(loopCounter,3);
-
+    cc.and_(loopCounter,0xFF);
+    
     auto test = cc.newUInt16();
     cc.mov(test.r64(),0);
     cc.mov(test,indexRegisterValue);
@@ -209,30 +233,58 @@ void DRW(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &mem,a
     cc.mov(rem2,8);
     cc.sub(rem2,rem);
     auto displayOffset = cc.newUIntPtr();
+    auto flag = cc.newUInt8();
     for(int i=0;i<instr.low();i++)
     {   
         cc.mov(displayOffset,simDisp);
         cc.add(displayOffset,loopCounter);
 
-        cc.mov(toPlace,asmjit::x86::ptr_8(simI));
+        cc.mov(toPlace,asmjit::x86::ptr_8(simI,i));
         cc.shr(toPlace,rem);
+        cc.test(asmjit::x86::ptr_8(displayOffset,div),toPlace);
+        cc.setnz(flag);
         cc.xor_(asmjit::x86::ptr_8(displayOffset,div),toPlace);
-        
-        cc.mov(toPlace,asmjit::x86::ptr_8(simI));
+        cc.or_(registers[CPU::REG_F],flag);
+
+        cc.mov(toPlace,asmjit::x86::ptr_8(simI,i));
         cc.shl(toPlace,rem2);
+        cc.test(asmjit::x86::ptr_8(displayOffset,div2),toPlace);
+        cc.setnz(flag);
         cc.xor_(asmjit::x86::ptr_8(displayOffset,div2),toPlace);
+        cc.or_(registers[CPU::REG_F],flag);
         cc.add(loopCounter,8);
-        cc.and_(loopCounter,256-1);
-        cc.inc(simI);
+        cc.and_(loopCounter,0xFF);
     }
 }
 
 // Ex9E - Skip instruction if key with the value of Vx is pressed.
-void SKP(Opcode in, Cpu *cpu) {
+std::optional<asmjit::Label> SKP(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
+    auto button = asmjit::x86::ptr_8(cpubase,offsetof(CPU, buttons));
+    auto butAddr = cc.newUIntPtr();
+    cc.mov(butAddr,reinterpret_cast<uint64_t>(cpu.buttons));
+    auto tmp = cc.newUIntPtr();
+    cc.xor_(tmp,tmp);
+    cc.mov(tmp.r8(),registers[instr.x()]);
+    cc.add(butAddr,tmp);
+    asmjit::Label ljump = cc.newLabel();
+    cc.cmp(asmjit::x86::ptr_8(butAddr),1);
+    cc.je(ljump);
+    return ljump;
 }
 
 // ExA1 - Skip instruction if key with the value of Vx is not pressed.
-void SKNP(Opcode in, Cpu *cpu) {
+std::optional<asmjit::Label> SKNP(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
+    auto button = asmjit::x86::ptr_8(cpubase,offsetof(CPU, buttons));
+    auto butAddr = cc.newUIntPtr();
+    cc.mov(butAddr,reinterpret_cast<uint64_t>(cpu.buttons));
+    auto tmp = cc.newUIntPtr();
+    cc.xor_(tmp,tmp);
+    cc.mov(tmp.r8(),registers[instr.x()]);
+    cc.add(butAddr,tmp);
+    asmjit::Label ljump = cc.newLabel();
+    cc.cmp(asmjit::x86::ptr_8(butAddr),1);
+    cc.jne(ljump);
+    return ljump;
 }
 
 // Fx07 - Set Vx = delay timer value.
@@ -242,7 +294,21 @@ void LD_VX_DT(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, asmjit::x86
 }
 
 // Fx0A - Wait for a key press, store the value of the key in Vx.
-void LD_VX_K(Opcode in, Cpu *cpu) {
+void LD_VX_K(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
+    auto button = asmjit::x86::ptr_8(cpubase,offsetof(CPU, buttons));
+    auto butAddr = cc.newUIntPtr();
+    cc.mov(butAddr,reinterpret_cast<uint64_t>(cpu.buttons));
+
+    asmjit::Label Loop = cc.newLabel(); 
+    asmjit::Label Exit = cc.newLabel();
+    cc.bind(Loop);
+    for(int i = 0; i<16;i++){
+        cc.mov(registers[instr.x()],i);
+        cc.cmp(asmjit::x86::ptr_8(butAddr,i),0);
+        cc.jne(Exit);
+    }
+    cc.jmp(Loop);
+    cc.bind(Exit);
 }
 
 // Fx15 - Set delay timer = Vx.
@@ -260,15 +326,40 @@ void LD_ST(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, asmjit::x86::C
 // Fx1E - Set I = I + Vx.
 void ADD_I_VX(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
     auto memreg = asmjit::x86::ptr_16(cpubase,offsetof(CPU, indexRegister));
-    cc.add(memreg,registers[instr.x()]);
+    auto tmp = cc.newUInt16();
+    cc.xor_(tmp,tmp);
+    cc.mov(tmp.r8(),registers[instr.x()]);
+    cc.add(memreg,tmp);
 }
 
 // Fx29 - Set I = location of sprite for digit Vx.
-void LD_F_VX(Opcode in, Cpu *cpu) {
+void LD_F_VX(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &mem,asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
+    auto indexRegisterValue = asmjit::x86::ptr_16(cpubase,offsetof(CPU, indexRegister));
+    cc.mov(indexRegisterValue,0);
+    cc.mov(indexRegisterValue,registers[instr.x()]);
+    cc.shl(indexRegisterValue,2);
+    cc.add(indexRegisterValue,registers[instr.x()]);
 }
 
 // Fx33 - Store BCD representation of Vx in memory locations I, I+1, and I+2.
-void LD_B_VX(Opcode in, Cpu *cpu) {
+void LD_B_VX(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &mem,asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
+    auto indexRegisterValue = asmjit::x86::ptr_16(cpubase,offsetof(CPU, indexRegister));
+    
+    auto divisor = cc.newUInt32();
+    auto remainder = cc.newUInt32();
+    auto memPtr = cc.newUIntPtr();
+    cc.mov(memPtr,reinterpret_cast<uint64_t>(mem.getRawMemory()));
+    auto tmp = cc.newUIntPtr();
+    cc.xor_(tmp,tmp);
+    cc.mov(tmp.r8(),registers[instr.x()]);
+    cc.add(memPtr,tmp);
+    for(int i=0;i<3;i++)
+    {
+        cc.xor_(remainder,remainder);
+        cc.mov(divisor,10);
+        cc.div(remainder,tmp.r32(),divisor);
+        cc.mov(asmjit::x86::ptr_8(memPtr,2-i),remainder.r8());
+    }
 }
 
 // Fx55 - Store regs V0 through Vx in memory starting at location I.
@@ -276,8 +367,11 @@ void LD_I_VX(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &m
     auto simI = cc.newUIntPtr();
     auto indexRegisterValue = asmjit::x86::ptr_16(cpubase,offsetof(CPU, indexRegister));
     cc.mov(simI,reinterpret_cast<uint64_t>(mem.getRawMemory()));
-    cc.add(simI,indexRegisterValue);
-    for(int i=0;i<instr.x();i++)
+    auto tmp = cc.newUIntPtr();
+    cc.xor_(tmp,tmp);
+    cc.mov(tmp.r16(),indexRegisterValue);
+    cc.add(simI,tmp);
+    for(int i=0;i<=instr.x();i++)
     {
         cc.mov(asmjit::x86::byte_ptr(simI,i),registers[i]);
     }
@@ -289,8 +383,11 @@ void LD_VX_I(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, c8::Memory &
     auto simI = cc.newUIntPtr();
     auto indexRegisterValue = asmjit::x86::ptr_16(cpubase,offsetof(CPU, indexRegister));
     cc.mov(simI,reinterpret_cast<uint64_t>(mem.getRawMemory()));
-    cc.add(simI,indexRegisterValue);
-    for(int i=0;i<instr.x();i++)
+    auto tmp = cc.newUInt64();
+    cc.xor_(tmp,tmp);
+    cc.mov(tmp.r16(),indexRegisterValue);
+    cc.add(simI,tmp);
+    for(int i=0;i<=instr.x();i++)
     {
         cc.mov(registers[i],asmjit::x86::byte_ptr(simI,i));
     }

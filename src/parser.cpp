@@ -132,15 +132,15 @@ std::bitset<CPU::AMOUNT_REGISTERS> Parser::parseUsedRegisters(c8::Opcode opcode)
                 // 8xy3 - Performs a bitwise exclusive OR on the values of Vx and Vy.
                 case 0x03: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y());
                 // 8xy4 - Set Vx = Vx + Vy, set VF = carry.
-                case 0x04: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y() | 0x80);
+                case 0x04: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y() | 0x8000);
                 // 8xy5 - Set Vx = Vx - Vy, set VF = NOT borrow.
-                case 0x05: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y() | 0x80);
+                case 0x05: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y() | 0x8000);
                 // 8xy6 - Set Vx = Vx SHR 1.
-                case 0x06: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y());
+                case 0x06: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 0x8000);
                 // 8xy7 - Set Vx = Vy - Vx, set VF = NOT borrow.
-                case 0x07: std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y() | 0x80);
+                case 0x07: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y() | 0x8000);
                 // 8xyE - Set Vx = Vx SHL 1.
-                case 0x0E: std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y());
+                case 0x0E: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x() | 0x8000);
                 // UNKNOWN
                 default: return std::bitset<CPU::AMOUNT_REGISTERS>(0);
             }
@@ -153,7 +153,7 @@ std::bitset<CPU::AMOUNT_REGISTERS> Parser::parseUsedRegisters(c8::Opcode opcode)
         // Cxkk - Set Vx = random byte AND kk.
         case 0x0C: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x());
         // Dxyn - Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
-        case 0x0D: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y() | 0x80);
+        case 0x0D: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y() | 0x8000);
         case 0x0E:
             switch (opcode.byte()) {
                 // Ex9E - Skip instruction if key with the value of Vx is pressed.

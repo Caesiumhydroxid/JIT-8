@@ -4,7 +4,7 @@ project(CMakeSFMLProject LANGUAGES CXX)
 include(FetchContent)
 FetchContent_Declare(SFML
     GIT_REPOSITORY https://github.com/SFML/SFML.git
-    GIT_TAG 2.6.x)
+    GIT_TAG 2.5.1)
 FetchContent_MakeAvailable(SFML)
 
 FetchContent_Declare(ASMJIT
@@ -15,8 +15,10 @@ file(GLOB SOURCES
     src/*.h
     src/*.cpp
 )
-set(CMAKE_BUILD_TYPE Debug)
 
+#SET(GCC_COVERAGE_COMPILE_FLAGS "-fsanitize=address")
+set(CMAKE_BUILD_TYPE Debug)
+#add_definitions(${GCC_COVERAGE_COMPILE_FLAGS})
 
 add_executable(CMakeSFMLProject ${SOURCES})
 
