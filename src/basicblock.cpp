@@ -34,6 +34,29 @@ BasicBlock::BasicBlock( std::unique_ptr<BasicBlockInformation> information,
         }
         jumpLab = tempLabel;
         pc+=2;
+        //pushq $0    #0 nanoseconds
+        //pushq $2    #2 seconds
+        //leaq (%rbp),%rdi    #the time structure on the stack       
+        //movq $35,%rax       #nanosleep syscall
+        //movq $0,%rsi        #disable useless parameter           
+        //syscall             
+        cc.push(asmjit::x86::rax);
+        cc.push(asmjit::x86::rdi);
+        cc.push(asmjit::x86::rsi);
+        cc.push(asmjit::x86::rcx);
+        cc.push(asmjit::x86::r11);
+        cc.push(1000000);
+        cc.push(0);
+        cc.mov(asmjit::x86::rdi,asmjit::x86::rsp);
+        cc.xor_(asmjit::x86::rsi,asmjit::x86::rsi);
+        cc.mov(asmjit::x86::rax,35);
+        cc.emit(asmjit::x86::Inst::kIdSyscall);
+        cc.add(asmjit::x86::rsp,16);
+        cc.pop(asmjit::x86::r11);
+        cc.pop(asmjit::x86::rcx);
+        cc.pop(asmjit::x86::rsi);
+        cc.pop(asmjit::x86::rdi);
+        cc.pop(asmjit::x86::rax);
     }
     generateEpilogue(cc,CPU_BASE,registers);
     cc.endFunc();

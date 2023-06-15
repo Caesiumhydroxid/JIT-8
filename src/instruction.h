@@ -343,22 +343,27 @@ void LD_F_VX(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &m
 
 // Fx33 - Store BCD representation of Vx in memory locations I, I+1, and I+2.
 void LD_B_VX(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &mem,asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
+    auto simI = cc.newUIntPtr();
     auto indexRegisterValue = asmjit::x86::ptr_16(cpubase,offsetof(CPU, indexRegister));
-    
+    cc.mov(simI,reinterpret_cast<uint64_t>(mem.getRawMemory()));
+    auto tmp = cc.newUIntPtr();
+    cc.xor_(tmp,tmp);
+    cc.mov(tmp.r16(),indexRegisterValue);
+    cc.add(simI,tmp);
+
     auto divisor = cc.newUInt32();
     auto remainder = cc.newUInt32();
     auto memPtr = cc.newUIntPtr();
     cc.mov(memPtr,reinterpret_cast<uint64_t>(mem.getRawMemory()));
-    auto tmp = cc.newUIntPtr();
-    cc.xor_(tmp,tmp);
-    cc.mov(tmp.r8(),registers[instr.x()]);
-    cc.add(memPtr,tmp);
+    auto tmpCalc = cc.newUIntPtr();
+    cc.xor_(tmpCalc,tmpCalc);
+    cc.mov(tmpCalc.r8(),registers[instr.x()]);
     for(int i=0;i<3;i++)
     {
         cc.xor_(remainder,remainder);
         cc.mov(divisor,10);
-        cc.div(remainder,tmp.r32(),divisor);
-        cc.mov(asmjit::x86::ptr_8(memPtr,2-i),remainder.r8());
+        cc.div(remainder,tmpCalc.r32(),divisor);
+        cc.mov(asmjit::x86::ptr_8(simI,2-i),remainder.r8());
     }
 }
 
