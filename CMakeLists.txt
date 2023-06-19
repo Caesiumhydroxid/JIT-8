@@ -17,7 +17,7 @@ file(GLOB SOURCES
 )
 
 #SET(GCC_COVERAGE_COMPILE_FLAGS "-fsanitize=address")
-set(CMAKE_BUILD_TYPE Debug)
+#set(CMAKE_BUILD_TYPE Debug)
 #add_definitions(${GCC_COVERAGE_COMPILE_FLAGS})
 
 add_executable(CMakeSFMLProject ${SOURCES})

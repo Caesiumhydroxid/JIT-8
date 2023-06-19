@@ -136,11 +136,11 @@ std::bitset<CPU::AMOUNT_REGISTERS> Parser::parseUsedRegisters(c8::Opcode opcode)
                 // 8xy5 - Set Vx = Vx - Vy, set VF = NOT borrow.
                 case 0x05: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y() | 0x8000);
                 // 8xy6 - Set Vx = Vx SHR 1.
-                case 0x06: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 0x8000);
+                case 0x06: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x() |  1<<opcode.y() | 0x8000);
                 // 8xy7 - Set Vx = Vy - Vx, set VF = NOT borrow.
                 case 0x07: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y() | 0x8000);
-                // 8xyE - Set Vx = Vx SHL 1.
-                case 0x0E: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x() | 0x8000);
+                // 8xyE - Set Vx = Vy SHL 1.
+                case 0x0E: return std::bitset<CPU::AMOUNT_REGISTERS>(1<<opcode.x() | 1<<opcode.y()  | 0x8000);
                 // UNKNOWN
                 default: return std::bitset<CPU::AMOUNT_REGISTERS>(0);
             }
@@ -211,3 +211,7 @@ bool Parser::isJumpInstruction(Instruction instr , std::optional<Instruction> be
     }
 }
 
+bool Parser::isWriteInstruction(Instruction instr ) {
+    return (instr == Instruction::LD_B_VX ||
+            instr == Instruction::LD_I_VX);
+}

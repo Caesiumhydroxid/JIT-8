@@ -1,7 +1,10 @@
 #include <asmjit/asmjit.h>
 #include <array>
+#include <bits/chrono.h>
+#include <chrono>
 #include <iostream>
 #include <iterator>
+#include <ratio>
 #include <vector>
 #include <fstream>
 #include "basicblock.h"
@@ -15,42 +18,136 @@
 #include <unistd.h>
 using namespace asmjit;
 
-
-int startJit(CPU &cpu, std::vector<uint8_t> &rom) {
-    JitRuntime rt;
-    c8::Memory memory;
-    srand(time(NULL));
-
-    std::array<uint8_t,10>program {
-        0xD0,0x05,
-        0xD0,0x05,
-        0x10,0x00,
-    };
-
-    printf("Pointer %h \n",memory.memory.data());
-    
-    std::copy(rom.begin(),rom.end(),memory.memory.begin()+0x200);
-
-    uint16_t currentAddress = 0x200;
-    for(int i=0;i<500000000;i++){
-        if(memory.jumpTable[currentAddress] == NULL)
-        {
-            auto res = Parser::parseBasicBlock(memory.memory, currentAddress);
-            auto basicBlock = std::make_unique<BasicBlock>(std::move(res),cpu,memory,rt);
-            memory.jumpTable[currentAddress] = std::move(basicBlock);
+void deleteAllDirtyBlocks(c8::Memory &memory, uint16_t dirtyAddress) {
+  for (int j = 0; j < memory.jumpTable.size(); j++) {
+    if (memory.jumpTable[j] != NULL) {
+      if (memory.jumpTable[j]->getStartAddr() <= dirtyAddress &&
+          memory.jumpTable[j]->getEndAddr() > dirtyAddress) {
+        for (int i = memory.jumpTable[j]->getStartAddr();
+             i < memory.jumpTable[j]->getEndAddr(); i++) {
+          memory.startAddressTable[i] = 0;
         }
-        currentAddress = memory.jumpTable[currentAddress]->fn();
-        //cpu.printState();
-        //for(int i=0;i<10;i++){
-        //    std::cout << std::dec << unsigned(memory[i+cpu.indexRegister]) <<std::endl;
-        //}
-        //std::cout<<"Ret: "<< std::hex<<currentAddress<<std::endl;
-        //usleep(10000);
-        if(currentAddress == 0) break;
+        memory.jumpTable[j].reset();
+        memory.jumpTable[j] = NULL;
+      }
     }
-    //cpu.display.drawBytes();
-    return 0;
+  }
 }
+
+void deleteAllDirtyBlocksRange(c8::Memory &memory, uint16_t dirtyAddressStart, uint16_t dirtyAddressEnd) {
+  for (int j = 0; j < memory.jumpTable.size(); j++) {
+    if (memory.jumpTable[j] != NULL) {
+      if (memory.jumpTable[j]->getStartAddr() <= dirtyAddressEnd &&
+          dirtyAddressStart <= memory.jumpTable[j]->getEndAddr()) {
+        for (int i = memory.jumpTable[j]->getStartAddr();
+             i < memory.jumpTable[j]->getEndAddr(); i++) {
+          memory.startAddressTable[i] = 0;
+        }
+        memory.jumpTable[j].reset();
+        memory.jumpTable[j] = NULL;
+      }
+    }
+  }
+}
+
+void markStartTableToBasicBlock(c8::Memory &memory,
+               std::unique_ptr<BasicBlock> &basicBlock) {
+
+  for (int i = basicBlock->getStartAddr(); i < basicBlock->getEndAddr(); i++) {
+    memory.startAddressTable[i] = basicBlock->getStartAddr();
+  }
+}
+
+void compileNextBlockIfNeeded(CPU &cpu, asmjit::JitRuntime &rt, c8::Memory &memory, uint16_t &currentAddress) {
+  if (memory.startAddressTable[currentAddress] != currentAddress) {
+    if (memory.startAddressTable[currentAddress] == 0 &&
+        memory.jumpTable[currentAddress] != NULL) // This block is dirty
+    {
+      std::cout << "Dirty" << std::hex << currentAddress << std::endl;
+      deleteAllDirtyBlocks(
+          memory, currentAddress); // Find all dirty blocks and delete them
+    }
+    // Compile new block
+    if (memory.jumpTable[currentAddress] == NULL) {
+      auto res = Parser::parseBasicBlock(memory.memory, currentAddress);
+      auto basicBlock =
+          std::make_unique<BasicBlock>(std::move(res), cpu, memory, rt);
+      markStartTableToBasicBlock(memory, basicBlock);
+      memory.jumpTable[currentAddress] = std::move(basicBlock);
+    }
+  }
+}
+
+void invalidiateAndRecompileIfWroteToOwnBlock(CPU &cpu, asmjit::JitRuntime &rt, c8::Memory &memory,
+               uint16_t &currentAddress, uint64_t &returnAddress) 
+{
+
+    uint16_t writeStartAddress = (returnAddress >> 16) & 0xFFF;
+    // The block wrote to itself (and stoppped execution after this write)
+    // Invalidate all dirty blocks
+    uint16_t programCounterAtIssue = returnAddress & 0xFFF;
+
+    std::cout << "It happened!! " << std::hex << programCounterAtIssue << " "
+              << writeStartAddress << std::endl;
+
+    deleteAllDirtyBlocksRange(memory, writeStartAddress,
+                              writeStartAddress + 16);
+
+    // We also compile a block which goes only up to the write so it should need
+    // less recompiles
+    auto res = Parser::parseBasicBlock(memory.memory, currentAddress,
+                                       programCounterAtIssue + 2);
+    auto basicBlock =
+        std::make_unique<BasicBlock>(std::move(res), cpu, memory, rt);
+    markStartTableToBasicBlock(memory, basicBlock);
+    memory.jumpTable[currentAddress] = std::move(basicBlock);
+    currentAddress = programCounterAtIssue + 2;
+}
+
+typedef struct runtimeInformation_s
+{
+  std::chrono::duration<double ,std::micro> totalRuntime;
+  std::chrono::duration<double ,std::micro> compilerRuntime;
+} runtimeInformation_t;
+
+runtimeInformation_t startJit(CPU &cpu, std::vector<uint8_t> &rom) {
+  runtimeInformation_t timeInfo;
+  timeInfo.totalRuntime = std::chrono::microseconds(0);
+  timeInfo.compilerRuntime = std::chrono::microseconds(0);
+  
+  JitRuntime rt;
+  c8::Memory memory;
+  srand(time(NULL));
+  std::copy(rom.begin(), rom.end(), memory.memory.begin() + 0x200);
+
+  auto startTime = std::chrono::high_resolution_clock::now();
+  uint16_t currentAddress = 0x200;
+  for (int i = 0; i < 500000000; i++) {
+
+    auto startCompile = std::chrono::high_resolution_clock::now();
+    compileNextBlockIfNeeded(cpu, rt, memory, currentAddress);
+    auto doneCompile = std::chrono::high_resolution_clock::now();
+    timeInfo.compilerRuntime += doneCompile - startCompile;
+    #if LOGGING
+    std::cout << "Exec:" << std::hex << unsigned(currentAddress) << std::endl;
+    #endif
+    uint64_t returnAddress = memory.jumpTable[currentAddress]->fn();
+
+    if(returnAddress&0x8000) {
+      startCompile = std::chrono::high_resolution_clock::now();
+      invalidiateAndRecompileIfWroteToOwnBlock(cpu, rt, memory, currentAddress, returnAddress);
+      doneCompile = std::chrono::high_resolution_clock::now();
+      timeInfo.compilerRuntime += doneCompile - startCompile;
+    }
+    else {
+      currentAddress = returnAddress & 0xFFF;
+    }
+    if (currentAddress == 0)
+      break;
+  }
+  timeInfo.totalRuntime = std::chrono::high_resolution_clock::now() - startTime;
+  return timeInfo;
+} 
 
 struct threadData
 {
@@ -86,7 +183,12 @@ int main(int argc, char *argv[])
             window.setActive(false);
             sf::Thread thread(&startSfml,data);
             thread.launch();
-            startJit(cpu,buffer);
+            runtimeInformation_s timeInfo = startJit(cpu,buffer);
+            //window.close();
+            
+            std::cout << "Total Compiletime : " << timeInfo.compilerRuntime.count() << "μs" << std::endl;
+            std::cout << "Total Runtime     : " << timeInfo.totalRuntime.count() << "μs" << std::endl;
+            std::cout << "Compile percentage: " << timeInfo.compilerRuntime.count() / timeInfo.totalRuntime.count() << "%" << std::endl;
         } else {
             // File reading failed
             std::cerr << "Error reading file." << std::endl;

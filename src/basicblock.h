@@ -12,7 +12,7 @@
 #include "memory.h"
 #include "cpu.h"
 
-typedef uint16_t (*BasicBlockFunction)(void);
+typedef uint64_t (*BasicBlockFunction)(void);
 
 class BasicBlock {
 
@@ -22,6 +22,7 @@ class BasicBlock {
             uint16_t endAddress;
             std::bitset<CPU::AMOUNT_REGISTERS> usedRegisters;
             std::vector<c8::Opcode> instructions;
+            bool writesToItself;
         };
 
         void generatePrologue(asmjit::x86::Compiler &cc, asmjit::x86::Gp cpubase,
@@ -29,6 +30,9 @@ class BasicBlock {
 
         void generateEpilogue(asmjit::x86::Compiler &cc, asmjit::x86::Gp cpubase,
                                     const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers);
+
+        void compile(CPU &cpu, c8::Memory &mem,asmjit::JitRuntime &rt);
+
     private:
         
         std::unique_ptr<BasicBlockInformation> info;
@@ -50,6 +54,8 @@ class BasicBlock {
                     CPU &cpu, 
                     c8::Memory &mem,
                     asmjit::JitRuntime& rt);
+        int getStartAddr();
+        int getEndAddr();
         BasicBlockFunction fn;
 };
 

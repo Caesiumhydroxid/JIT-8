@@ -7,7 +7,7 @@
 #include <array>
 #include <cinttypes>
 
-typedef uint16_t (*BasicBlockFunction)(void);
+typedef uint64_t (*BasicBlockFunction)(void);
 class BasicBlock;
 
 namespace c8 {
@@ -43,16 +43,22 @@ public:
         return memory.data();
     }
 
+    uint16_t* getRawStartAddressTable() {
+        return startAddressTable.data();
+    }
+
     uint8_t& operator[](int index) {
         return memory.at(index);
     }
 
     void Reset() {
         memory.fill(0);
+        startAddressTable.fill(0);
         std::copy(begin(kSprites), end(kSprites), begin(memory));
     }
 
-    std::array<std::unique_ptr<BasicBlock>, 0x1000> jumpTable = {};
+    std::array<std::unique_ptr<BasicBlock>, 0x1000> jumpTable = {0};
+    std::array<uint16_t, 0x1000> startAddressTable = {0};
     std::array<uint8_t, 0x1000> memory = {0};
 };
 

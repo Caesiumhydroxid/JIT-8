@@ -2,24 +2,59 @@
 #include <iostream>
 #include <cstdio>
 #include <stddef.h>
+#include <chrono>
 #include "parser.h"
 #include "cpu.h"
 #include "memory.h"
 #include "instruction.h"
+#include "constants.h"
 
 using namespace asmjit;
+
+
 
 BasicBlock::BasicBlock( std::unique_ptr<BasicBlockInformation> information,
                         CPU &cpu, 
                         c8::Memory &mem,
                         asmjit::JitRuntime &rt)
 {
-    uint16_t pc = information->startingAddress;
-    code.init(rt.environment(),rt.cpuFeatures());
-    code.setLogger(&logger);
-    x86::Compiler cc(&code);
     this->info = std::move(information);
-    auto func = cc.addFunc(FuncSignatureT<uint16_t>());
+    compile(cpu,mem,rt);
+}
+
+void generateSleepCode(x86::Compiler &cc){
+    //pushq $0    #0 nanoseconds
+    //pushq $2    #2 seconds
+    //leaq (%rbp),%rdi    #the time structure on the stack       
+    //movq $35,%rax       #nanosleep syscall
+    //movq $0,%rsi        #disable useless parameter           
+    //syscall             
+    cc.push(asmjit::x86::rax);
+    cc.push(asmjit::x86::rdi);
+    cc.push(asmjit::x86::rsi);
+    cc.push(asmjit::x86::rcx);
+    cc.push(asmjit::x86::r11);
+    cc.push(10000);
+    cc.push(0);
+    cc.mov(asmjit::x86::rdi,asmjit::x86::rsp);
+    cc.xor_(asmjit::x86::rsi,asmjit::x86::rsi);
+    cc.mov(asmjit::x86::rax,35);
+    cc.emit(asmjit::x86::Inst::kIdSyscall);
+    cc.add(asmjit::x86::rsp,16);
+    cc.pop(asmjit::x86::r11);
+    cc.pop(asmjit::x86::rcx);
+    cc.pop(asmjit::x86::rsi);
+    cc.pop(asmjit::x86::rdi);
+    cc.pop(asmjit::x86::rax);
+}
+
+void BasicBlock::compile(CPU &cpu, c8::Memory &mem,asmjit::JitRuntime &rt){
+    
+    uint16_t pc = this->info->startingAddress;
+    code.init(rt.environment(),rt.cpuFeatures());
+    //code.setLogger(&logger);
+    x86::Compiler cc(&code);
+    auto func = cc.addFunc(FuncSignatureT<uint64_t>());
     auto CPU_BASE = cc.newUIntPtr();
     cc.mov(CPU_BASE,&cpu);
     std::array<x86::Gp,CPU::AMOUNT_REGISTERS> registers;
@@ -27,47 +62,26 @@ BasicBlock::BasicBlock( std::unique_ptr<BasicBlockInformation> information,
     std::optional<Label> jumpLab = {};
     for(auto instr: info->instructions)
     {
-        std::cout << std::hex << unsigned(instr.in) << std::endl;
+        #if LOGGING
+        std::cout << std::hex << unsigned(pc) << ": " << unsigned(instr.in) << std::endl;
+        #endif 
+
         auto tempLabel = generateInstruction(instr,cpu,pc,CPU_BASE,mem,cc,registers);
         if(jumpLab.has_value()){
             cc.bind(jumpLab.value());
         }
         jumpLab = tempLabel;
         pc+=2;
-        //pushq $0    #0 nanoseconds
-        //pushq $2    #2 seconds
-        //leaq (%rbp),%rdi    #the time structure on the stack       
-        //movq $35,%rax       #nanosleep syscall
-        //movq $0,%rsi        #disable useless parameter           
-        //syscall             
-        cc.push(asmjit::x86::rax);
-        cc.push(asmjit::x86::rdi);
-        cc.push(asmjit::x86::rsi);
-        cc.push(asmjit::x86::rcx);
-        cc.push(asmjit::x86::r11);
-        cc.push(1000000);
-        cc.push(0);
-        cc.mov(asmjit::x86::rdi,asmjit::x86::rsp);
-        cc.xor_(asmjit::x86::rsi,asmjit::x86::rsi);
-        cc.mov(asmjit::x86::rax,35);
-        cc.emit(asmjit::x86::Inst::kIdSyscall);
-        cc.add(asmjit::x86::rsp,16);
-        cc.pop(asmjit::x86::r11);
-        cc.pop(asmjit::x86::rcx);
-        cc.pop(asmjit::x86::rsi);
-        cc.pop(asmjit::x86::rdi);
-        cc.pop(asmjit::x86::rax);
+        //generateSleepCode(cc);
     }
     generateEpilogue(cc,CPU_BASE,registers);
     cc.endFunc();
-    std::cout<< "Try" << std::endl;
     cc.finalize();
-
     Error err = rt.add(&fn,&code);
     if (err) {
         std::cout<< asmjit::DebugUtils::errorAsString(err) << std::endl;
     }
-    std::cout<<logger.data() << std::endl;
+    //std::cout<<logger.data() << std::endl;
 }
 
 void BasicBlock::generatePrologue(asmjit::x86::Compiler &cc,  asmjit::x86::Gp cpubase,
@@ -78,7 +92,9 @@ void BasicBlock::generatePrologue(asmjit::x86::Compiler &cc,  asmjit::x86::Gp cp
     {
         if(info->usedRegisters.test(i))
         {
+            #if LOGGING
             std::cout<<"Load reg "<< i << std::endl;
+            #endif
             registers[i] = cc.newUInt8();
             auto memreg = x86::byte_ptr(cpubase, offsetof(CPU, regs) + static_cast<uint8_t>(i) );
             cc.mov(registers[i],memreg);
@@ -98,6 +114,15 @@ void BasicBlock::generateEpilogue(asmjit::x86::Compiler &cc, asmjit::x86::Gp cpu
         }
     }
    
+}
+
+int BasicBlock::getStartAddr()
+{
+    return (*this->info).startingAddress;
+}
+int BasicBlock::getEndAddr()
+{
+    return (*this->info).endAddress;
 }
 
 std::optional<asmjit::Label> BasicBlock::generateInstruction(c8::Opcode instr,
@@ -142,8 +167,8 @@ std::optional<asmjit::Label> BasicBlock::generateInstruction(c8::Opcode instr,
         case Instruction::LD_ST:        LD_ST     (instr,cpu,cpubase,cc,registers); return {};
         case Instruction::ADD_I_VX:     ADD_I_VX  (instr,cpu,cpubase,cc,registers); return {};
         case Instruction::LD_F_VX:      LD_F_VX   (instr,cpu,cpubase,mem,cc,registers); return {};
-        case Instruction::LD_B_VX:      LD_B_VX   (instr,cpu,cpubase,mem,cc,registers); return {};
-        case Instruction::LD_I_VX:      LD_I_VX   (instr,cpu,cpubase,mem,cc,registers); return {};
+        case Instruction::LD_B_VX:      LD_B_VX   (instr,this,pc,cpu,cpubase,mem,cc,registers); return {};
+        case Instruction::LD_I_VX:      LD_I_VX   (instr,this,pc,cpu,cpubase,mem,cc,registers); return {};
         case Instruction::LD_VX_I:      LD_VX_I   (instr,cpu,cpubase,mem,cc,registers); return {};
     }
     std::cout << "Missing Instruction" << std::endl;

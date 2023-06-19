@@ -54,15 +54,18 @@ class Parser{
     public:
 
     template <std::size_t N> 
-    static std::unique_ptr<BasicBlock::BasicBlockInformation> parseBasicBlock(typename std::array<uint8_t,N> code, int pos){
+    static std::unique_ptr<BasicBlock::BasicBlockInformation> parseBasicBlock(typename std::array<uint8_t,N> code, int pos, int maxPos = 0xFFFFFFF){
         auto blockInformation = std::make_unique<BasicBlock::BasicBlockInformation>();
         uint16_t amountInstructions = 0;
         blockInformation->startingAddress = pos;
         blockInformation->usedRegisters = std::bitset<CPU::AMOUNT_REGISTERS>();
         auto prevInstr = std::optional<Instruction>{};
-        for(auto it = code.begin()+pos; it != code.end(); it++)
+        int i = pos;
+        for(int i = pos; i < code.size() && i < maxPos; i++)
         {
-            uint16_t assembledInstruction = *it << 8 | *(++it);
+            uint16_t assembledInstruction = code[i] << 8;
+            i++;
+            assembledInstruction |= code[i];
             auto parsedInstr = parse(assembledInstruction);
             blockInformation->usedRegisters |= parseUsedRegisters(assembledInstruction);
             blockInformation->instructions.push_back(assembledInstruction);
@@ -72,7 +75,7 @@ class Parser{
             prevInstr = parsedInstr;
             amountInstructions++;
         }
-        blockInformation->endAddress = pos+amountInstructions; 
+        blockInformation->endAddress = pos+amountInstructions*2; 
         return blockInformation;
     }
 
@@ -81,6 +84,7 @@ class Parser{
 
     private:
         static bool isJumpInstruction(Instruction instr,std::optional<Instruction> before);
+        static bool isWriteInstruction(Instruction instr);
 };
 
 

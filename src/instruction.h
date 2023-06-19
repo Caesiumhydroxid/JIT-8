@@ -36,8 +36,9 @@ void RET(Opcode instr, const CPU &cpu, BasicBlock* basicBlock ,asmjit::x86::Comp
     cc.shl(stackMem,1);
     cc.mov(ptr,reinterpret_cast<uint64_t>(&cpu.stack[0]));
     cc.add(ptr,stackMem);
-    auto val = cc.newUInt16();
-    cc.mov(val, asmjit::x86::ptr_16(ptr));
+    auto val = cc.newUInt64();
+    cc.xor_(val,val);
+    cc.mov(val.r16(), asmjit::x86::ptr_16(ptr));
     cc.ret(val);
 }
 
@@ -45,9 +46,10 @@ void RET(Opcode instr, const CPU &cpu, BasicBlock* basicBlock ,asmjit::x86::Comp
 void JMP(Opcode instr, BasicBlock* basicBlock ,asmjit::x86::Compiler &cc,asmjit::x86::Gp cpubase, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers)
 {
     basicBlock->generateEpilogue(cc,cpubase,registers);
-    auto retVal = cc.newUInt16();
-    cc.mov(retVal,instr.address());
-    cc.ret(retVal);
+    auto val = cc.newUInt64();
+    cc.xor_(val,val);
+    cc.mov(val.r16(), instr.address());
+    cc.ret(val);
 }
 
 // 2nnn - Call subroutine at nnn.
@@ -64,9 +66,10 @@ void CALL(Opcode instr, const CPU &cpu, BasicBlock* basicBlock, uint16_t pc ,asm
     cc.mov(asmjit::x86::ptr_16(ptr), pc+2);
     cc.inc(stackPointer);
     basicBlock->generateEpilogue(cc,cpubase,registers);
-    auto retVal = cc.newUInt16();
-    cc.mov(retVal,instr.address());
-    cc.ret(retVal);
+    auto val = cc.newUInt64();
+    cc.xor_(val,val);
+    cc.mov(val.r16(), instr.address());
+    cc.ret(val);
 }
 // 3xkk - Skip next instruction if Vx = kk.
 std::optional<asmjit::Label> SE_VX_KK(Opcode instr, const CPU &cpu, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers)
@@ -138,6 +141,8 @@ void SUB_VX_VY(Opcode instr, const CPU &cpu, asmjit::x86::Compiler &cc, const st
 
 // 8xy6 - Set Vx = Vx SHR 1.
 void SHR_VX(Opcode instr, const CPU &cpu, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
+    //quirks
+    cc.mov(registers[instr.x()],registers[instr.y()]);
     cc.shr(registers[instr.x()],1);
     cc.setc(registers[CPU::REG_F]);
 }
@@ -153,6 +158,8 @@ void SUBN_VX_VY(Opcode instr, const CPU &cpu, asmjit::x86::Compiler &cc, const s
 
 // 8xyE - Set Vx = Vx SHL 1.
 void SHL_VX(Opcode instr, const CPU &cpu, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
+    //quirks
+    cc.mov(registers[instr.x()],registers[instr.y()]);
     cc.shl(registers[instr.x()],1);
     cc.setc(registers[15]);
 }
@@ -175,7 +182,7 @@ void LD_I(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, asmjit::x86::Co
 // Bnnn - Program counter is set to nnn plus the value of V0.
 void JMP_V0(Opcode instr, const CPU &cpu, BasicBlock* basicBlock ,asmjit::x86::Compiler &cc,asmjit::x86::Gp cpubase, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
     basicBlock->generateEpilogue(cc,cpubase,registers);
-    auto retVal = cc.newUInt16();
+    auto retVal = cc.newUInt64();
     cc.xor_(retVal,retVal);
     cc.mov(retVal.r8(),registers[0]);
     cc.add(retVal,instr.address());
@@ -297,18 +304,27 @@ void LD_VX_DT(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, asmjit::x86
 void LD_VX_K(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
     auto button = asmjit::x86::ptr_8(cpubase,offsetof(CPU, buttons));
     auto butAddr = cc.newUIntPtr();
+
     cc.mov(butAddr,reinterpret_cast<uint64_t>(cpu.buttons));
+    cc.xor_(registers[instr.x()].r64(),registers[instr.x()].r64());
 
     asmjit::Label Loop = cc.newLabel(); 
-    asmjit::Label Exit = cc.newLabel();
+    asmjit::Label Loop2 = cc.newLabel(); 
     cc.bind(Loop);
     for(int i = 0; i<16;i++){
         cc.mov(registers[instr.x()],i);
-        cc.cmp(asmjit::x86::ptr_8(butAddr,i),0);
-        cc.jne(Exit);
+        cc.cmp(asmjit::x86::ptr_8(butAddr,i),1);
+        cc.je(Loop2);
     }
     cc.jmp(Loop);
-    cc.bind(Exit);
+
+    auto EXIT = cc.newLabel();
+    cc.bind(Loop2);
+    cc.cmp(asmjit::x86::ptr_8(butAddr,registers[instr.x()].r64()),0);
+    cc.je(EXIT);
+    cc.jmp(Loop2);
+
+    cc.bind(EXIT);
 }
 
 // Fx15 - Set delay timer = Vx.
@@ -342,7 +358,7 @@ void LD_F_VX(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &m
 }
 
 // Fx33 - Store BCD representation of Vx in memory locations I, I+1, and I+2.
-void LD_B_VX(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &mem,asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
+void LD_B_VX(Opcode instr, BasicBlock* bb,int pc, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &mem,asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
     auto simI = cc.newUIntPtr();
     auto indexRegisterValue = asmjit::x86::ptr_16(cpubase,offsetof(CPU, indexRegister));
     cc.mov(simI,reinterpret_cast<uint64_t>(mem.getRawMemory()));
@@ -351,36 +367,98 @@ void LD_B_VX(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &m
     cc.mov(tmp.r16(),indexRegisterValue);
     cc.add(simI,tmp);
 
+    auto startAddrT = cc.newUIntPtr();
+    cc.mov(startAddrT,reinterpret_cast<uint64_t>(mem.getRawStartAddressTable()));
+
     auto divisor = cc.newUInt32();
     auto remainder = cc.newUInt32();
-    auto memPtr = cc.newUIntPtr();
-    cc.mov(memPtr,reinterpret_cast<uint64_t>(mem.getRawMemory()));
     auto tmpCalc = cc.newUIntPtr();
     cc.xor_(tmpCalc,tmpCalc);
     cc.mov(tmpCalc.r8(),registers[instr.x()]);
+    auto overwrittenFunction = cc.newUInt16();
     for(int i=0;i<3;i++)
     {
         cc.xor_(remainder,remainder);
         cc.mov(divisor,10);
         cc.div(remainder,tmpCalc.r32(),divisor);
         cc.mov(asmjit::x86::ptr_8(simI,2-i),remainder.r8());
+        
+        cc.xor_(overwrittenFunction.r64(),overwrittenFunction.r64());
+        cc.mov(overwrittenFunction.r16(), asmjit::x86::ptr_16(startAddrT,tmp,1));
+        cc.mov(asmjit::x86::ptr_16(startAddrT,overwrittenFunction,1), 0);
+        cc.inc(tmp);
     }
+    //cc.add(indexRegisterValue,3);
+
+    //Check if wrote into own block
+    cc.xor_(tmp,tmp);
+    cc.mov(tmp.r16(),indexRegisterValue);
+    auto ljump = cc.newLabel();
+    //compares interval of writing (I, I + 3) to [pc+2, end]
+    cc.cmp(tmp,(pc+2)-3);
+    cc.jl(ljump);
+    cc.cmp(tmp,bb->getEndAddr());
+    cc.jg(ljump);
+
+    
+    bb->generateEpilogue(cc,cpubase,registers);
+    auto retVal = cc.newUInt64();
+    cc.xor_(retVal,retVal);
+    cc.mov(retVal,tmp);
+    cc.shl(retVal,16);
+    cc.or_(retVal,0x8000 | (pc)&0x0FFF);
+    cc.ret(retVal);
+
+    cc.bind(ljump);
+    
 }
 
 // Fx55 - Store regs V0 through Vx in memory starting at location I.
-void LD_I_VX(Opcode instr, const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &mem,asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
+void LD_I_VX(Opcode instr, BasicBlock* bb,int pc , const CPU &cpu,asmjit::x86::Gp cpubase, c8::Memory &mem,asmjit::x86::Compiler &cc, const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers) {
     auto simI = cc.newUIntPtr();
     auto indexRegisterValue = asmjit::x86::ptr_16(cpubase,offsetof(CPU, indexRegister));
     cc.mov(simI,reinterpret_cast<uint64_t>(mem.getRawMemory()));
+
+    auto startAddrT = cc.newUIntPtr();
+    cc.mov(startAddrT,reinterpret_cast<uint64_t>(mem.getRawStartAddressTable()));
+
     auto tmp = cc.newUIntPtr();
     cc.xor_(tmp,tmp);
     cc.mov(tmp.r16(),indexRegisterValue);
     cc.add(simI,tmp);
+
+    auto overwrittenFunction = cc.newUInt16();
+    cc.xor_(overwrittenFunction.r64(),overwrittenFunction.r64());
     for(int i=0;i<=instr.x();i++)
     {
         cc.mov(asmjit::x86::byte_ptr(simI,i),registers[i]);
+
+        cc.xor_(overwrittenFunction.r64(),overwrittenFunction.r64());
+        cc.mov(overwrittenFunction.r16(), asmjit::x86::ptr_16(startAddrT,tmp,1));
+        cc.mov(asmjit::x86::ptr_16(startAddrT,overwrittenFunction,1), 0);
+        cc.inc(tmp);
     }
-    simI.reset();
+    cc.add(indexRegisterValue,instr.x()+1);
+
+    //Check if wrote into own block (that still needs to execute)
+    cc.xor_(tmp,tmp);
+    cc.mov(tmp.r16(),indexRegisterValue);
+    auto ljump = cc.newLabel();
+    //compares interval of writing (I, I + {x}) to [pc+2, end]
+    cc.cmp(tmp,(pc+2)-instr.x());
+    cc.jl(ljump);
+    cc.cmp(tmp,bb->getEndAddr());
+    cc.jg(ljump);
+
+    bb->generateEpilogue(cc,cpubase,registers);
+    auto retVal = cc.newUInt64();
+    cc.xor_(retVal,retVal);
+    cc.mov(retVal,tmp);
+    cc.shl(retVal,16);
+    cc.or_(retVal,0x8000 | (pc)&0x0FFF);
+    cc.ret(retVal);
+
+    cc.bind(ljump);
 }
 
 // Fx65 - Read regs V0 through Vx from memory starting at location I.
@@ -396,6 +474,7 @@ void LD_VX_I(Opcode instr, const CPU &cpu, asmjit::x86::Gp cpubase, c8::Memory &
     {
         cc.mov(registers[i],asmjit::x86::byte_ptr(simI,i));
     }
+    cc.add(indexRegisterValue,instr.x()+1);
 }
 
 }
