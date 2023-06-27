@@ -16,6 +16,16 @@ file(GLOB SOURCES
     src/*.cpp
 )
 
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+set(CMAKE_CXX_FLAGS "-Wextra -Wall")
+set(CMAKE_CXX_FLAGS_DEBUG "-g")
+set(CMAKE_CXX_FLAGS_RELEASE "-O2")
+
 #SET(GCC_COVERAGE_COMPILE_FLAGS "-fsanitize=address")
 #set(CMAKE_BUILD_TYPE Debug)
 #add_definitions(${GCC_COVERAGE_COMPILE_FLAGS})

@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <stddef.h>
 #include <chrono>
+#include "asmjit/core/operand.h"
 #include "parser.h"
 #include "cpu.h"
 #include "memory.h"
@@ -22,7 +23,7 @@ BasicBlock::BasicBlock( std::unique_ptr<BasicBlockInformation> information,
     compile(cpu,mem,rt);
 }
 
-void generateSleepCode(x86::Compiler &cc){
+void generateSleepCode(x86::Compiler &cc, uint64_t slowdown){
     //pushq $0    #0 nanoseconds
     //pushq $2    #2 seconds
     //leaq (%rbp),%rdi    #the time structure on the stack       
@@ -34,7 +35,7 @@ void generateSleepCode(x86::Compiler &cc){
     cc.push(asmjit::x86::rsi);
     cc.push(asmjit::x86::rcx);
     cc.push(asmjit::x86::r11);
-    cc.push(10000);
+    cc.push(slowdown);
     cc.push(0);
     cc.mov(asmjit::x86::rdi,asmjit::x86::rsp);
     cc.xor_(asmjit::x86::rsi,asmjit::x86::rsi);
@@ -52,7 +53,9 @@ void BasicBlock::compile(CPU &cpu, c8::Memory &mem,asmjit::JitRuntime &rt){
     
     uint16_t pc = this->info->startingAddress;
     code.init(rt.environment(),rt.cpuFeatures());
-    //code.setLogger(&logger);
+    #if LOGGING
+    code.setLogger(&logger);
+    #endif
     x86::Compiler cc(&code);
     auto func = cc.addFunc(FuncSignatureT<uint64_t>());
     auto CPU_BASE = cc.newUIntPtr();
@@ -60,28 +63,38 @@ void BasicBlock::compile(CPU &cpu, c8::Memory &mem,asmjit::JitRuntime &rt){
     std::array<x86::Gp,CPU::AMOUNT_REGISTERS> registers;
     generatePrologue(cc,CPU_BASE,registers);
     std::optional<Label> jumpLab = {};
+    for(size_t i=0; i<info->instructions.size();i++){
+        jumpingLocations.push_back(cc.newLabel());
+    }
+    int i=0;
     for(auto instr: info->instructions)
     {
         #if LOGGING
         std::cout << std::hex << unsigned(pc) << ": " << unsigned(instr.in) << std::endl;
         #endif 
-
+        cc.bind(jumpingLocations[i]);
         auto tempLabel = generateInstruction(instr,cpu,pc,CPU_BASE,mem,cc,registers);
         if(jumpLab.has_value()){
             cc.bind(jumpLab.value());
         }
         jumpLab = tempLabel;
         pc+=2;
-        //generateSleepCode(cc);
+        i++;
+        if(cpu.slowdown != 0)
+        {
+            generateSleepCode(cc, cpu.slowdown);
+        }
     }
     generateEpilogue(cc,CPU_BASE,registers);
     cc.endFunc();
     cc.finalize();
     Error err = rt.add(&fn,&code);
+    #if LOGGING
     if (err) {
         std::cout<< asmjit::DebugUtils::errorAsString(err) << std::endl;
     }
-    //std::cout<<logger.data() << std::endl;
+    std::cout<<logger.data() << std::endl;
+    #endif
 }
 
 void BasicBlock::generatePrologue(asmjit::x86::Compiler &cc,  asmjit::x86::Gp cpubase,
@@ -116,6 +129,11 @@ void BasicBlock::generateEpilogue(asmjit::x86::Compiler &cc, asmjit::x86::Gp cpu
    
 }
 
+asmjit::Label BasicBlock::getLabelAccodingToAddress(uint16_t address)
+{
+    return jumpingLocations[(address-getStartAddr())/2];
+}
+
 int BasicBlock::getStartAddr()
 {
     return (*this->info).startingAddress;
@@ -136,41 +154,66 @@ std::optional<asmjit::Label> BasicBlock::generateInstruction(c8::Opcode instr,
     
     using namespace c8::instruction;
     switch (parsedInstr) {
-        case Instruction::CLS:          CLS     (instr,cpu,this,cc,cpubase,registers); return {};
-        case Instruction::RET:          RET     (instr,cpu,this,cc,cpubase,registers); return {};
+        case Instruction::CLS:
+            CLS(cpu, cc); return {};
+        case Instruction::RET:
+            RET(cpu, this, cc, cpubase, registers); return {};
         case Instruction::JMP:          JMP     (instr,this,cc,cpubase,registers); return {};
         case Instruction::CALL:         CALL    (instr,cpu,this,pc,cc,cpubase,registers); return {};
-        case Instruction::SE_VX_KK:     return SE_VX_KK  (instr,cpu,cc,registers);
-        case Instruction::SNE_VX_KK:    return SNE_VX_KK (instr,cpu,cc,registers);
-        case Instruction::SE_VX_VY:     return SE_VX_VY  (instr,cpu,cc,registers);
-        case Instruction::LD_VX_KK:     LD_VX_KK  (instr,cpu,cc,registers); return {};
-        case Instruction::ADD_VX_KK:    ADD_VX_KK (instr,cpu,cc,registers); return {};
-        case Instruction::LD_VX_VY:     LD_VX_VY  (instr,cpu,cc,registers); return {};
-        case Instruction::OR_VX_VY:     OR_VX_VY  (instr,cpu,cc,registers); return {};
-        case Instruction::AND_VX_VY:    AND_VX_VY (instr,cpu,cc,registers); return {};
-        case Instruction::XOR_VX_VY:    XOR_VX_VY (instr,cpu,cc,registers); return {};
-        case Instruction::ADD_VX_VY:    ADD_VX_VY (instr,cpu,cc,registers); return {};
-        case Instruction::SUB_VX_VY:    SUB_VX_VY (instr,cpu,cc,registers); return {};
-        case Instruction::SHR_VX:       SHR_VX    (instr,cpu,cc,registers); return {};
-        case Instruction::SUBN_VX_VY:   SUBN_VX_VY(instr,cpu,cc,registers); return {};
-        case Instruction::SHL_VX:       SHL_VX    (instr,cpu,cc,registers); return {};
-        case Instruction::SNE_VX_VY:    return SNE_VX_VY (instr,cpu,cc,registers);
-        case Instruction::LD_I:         LD_I      (instr,cpu,cpubase,cc,registers); return {};
-        case Instruction::JMP_V0:       JMP_V0    (instr, cpu, this ,cc,cpubase, registers); return {};
-        case Instruction::RND:          RND       (instr,cpu,cpubase,cc,registers); return{};
+        case Instruction::SE_VX_KK:     return SE_VX_KK(instr, cc, registers);
+        case Instruction::SNE_VX_KK:    return SNE_VX_KK(instr, cc, registers);
+        case Instruction::SE_VX_VY:     return SE_VX_VY(instr, cc, registers);
+        case Instruction::LD_VX_KK:
+            LD_VX_KK(instr, cc, registers); return {};
+        case Instruction::ADD_VX_KK:
+            ADD_VX_KK(instr, cc, registers); return {};
+        case Instruction::LD_VX_VY:
+            LD_VX_VY(instr, cc, registers); return {};
+        case Instruction::OR_VX_VY:
+            OR_VX_VY(instr, cc, registers); return {};
+        case Instruction::AND_VX_VY:
+            AND_VX_VY(instr, cc, registers); return {};
+        case Instruction::XOR_VX_VY:
+            XOR_VX_VY(instr, cc, registers); return {};
+        case Instruction::ADD_VX_VY:
+            ADD_VX_VY(instr, cc, registers); return {};
+        case Instruction::SUB_VX_VY:
+            SUB_VX_VY(instr, cc, registers); return {};
+        case Instruction::SHR_VX:
+            SHR_VX(instr, cc, registers); return {};
+        case Instruction::SUBN_VX_VY:
+            SUBN_VX_VY(instr, cc, registers); return {};
+        case Instruction::SHL_VX:
+            SHL_VX(instr, cc, registers); return {};
+        case Instruction::SNE_VX_VY:    return SNE_VX_VY(instr, cc, registers);
+        case Instruction::LD_I:
+            LD_I(instr, cpubase, cc); return {};
+        case Instruction::JMP_V0:
+            JMP_V0(instr, this, cc, cpubase, registers); return {};
+        case Instruction::RND:
+            RND(instr, cpubase, cc, registers); return{};
         case Instruction::DRW:          DRW(instr,cpu,cpubase,mem,cc,registers); return{};
-        case Instruction::SKP:          return SKP(instr,cpu,cpubase,cc,registers);
-        case Instruction::SKNP:         return SKNP(instr,cpu,cpubase,cc,registers);
-        case Instruction::LD_VX_DT:     LD_VX_DT  (instr,cpu,cpubase,cc,registers); return {};
-        case Instruction::LD_VX_K:      LD_VX_K   (instr,cpu,cpubase,cc,registers); return {};
-        case Instruction::LD_DT:        LD_DT     (instr,cpu,cpubase,cc,registers); return {};
-        case Instruction::LD_ST:        LD_ST     (instr,cpu,cpubase,cc,registers); return {};
-        case Instruction::ADD_I_VX:     ADD_I_VX  (instr,cpu,cpubase,cc,registers); return {};
-        case Instruction::LD_F_VX:      LD_F_VX   (instr,cpu,cpubase,mem,cc,registers); return {};
-        case Instruction::LD_B_VX:      LD_B_VX   (instr,this,pc,cpu,cpubase,mem,cc,registers); return {};
-        case Instruction::LD_I_VX:      LD_I_VX   (instr,this,pc,cpu,cpubase,mem,cc,registers); return {};
-        case Instruction::LD_VX_I:      LD_VX_I   (instr,cpu,cpubase,mem,cc,registers); return {};
+        case Instruction::SKP:          return SKP(instr, cpu, cc, registers);
+        case Instruction::SKNP:         return SKNP(instr, cpu, cc, registers);
+        case Instruction::LD_VX_DT:
+            LD_VX_DT(instr, cpubase, cc, registers); return {};
+        case Instruction::LD_VX_K:
+            LD_VX_K(instr, cpu, cc, registers); return {};
+        case Instruction::LD_DT:
+            LD_DT(instr, cpubase, cc, registers); return {};
+        case Instruction::LD_ST:
+            LD_ST(instr, cpubase, cc, registers); return {};
+        case Instruction::ADD_I_VX:
+            ADD_I_VX(instr, cpubase, cc, registers); return {};
+        case Instruction::LD_F_VX:
+            LD_F_VX(instr, cpubase, cc, registers); return {};
+        case Instruction::LD_B_VX:
+            LD_B_VX(instr, this, pc, cpubase, mem, cc, registers); return {};
+        case Instruction::LD_I_VX:
+            LD_I_VX(instr, this, pc, cpubase, mem, cc, registers); return {};
+        case Instruction::LD_VX_I:
+            LD_VX_I(instr, cpubase, mem, cc, registers); return {};
+        case Instruction::UNKNOWN:      std::cout << "Missing Instruction" << std::endl; return {};
     }
-    std::cout << "Missing Instruction" << std::endl;
     return {};
 }

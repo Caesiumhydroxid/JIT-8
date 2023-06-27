@@ -12,15 +12,13 @@
 #include "cpu.h"
 #include "memory.h"
 #include <SFML/Graphics.hpp>
-#include <cstdlib>
-#include "corax.h"
-#include "quirks.h"
 #include <unistd.h>
+#include "constants.h"
 using namespace asmjit;
 
 void deleteAllDirtyBlocks(c8::Memory &memory, uint16_t dirtyAddress) {
-  for (int j = 0; j < memory.jumpTable.size(); j++) {
-    if (memory.jumpTable[j] != NULL) {
+  for (size_t j = 0; j < memory.jumpTable.size(); j++) {
+    if (memory.jumpTable[j] != nullptr) {
       if (memory.jumpTable[j]->getStartAddr() <= dirtyAddress &&
           memory.jumpTable[j]->getEndAddr() > dirtyAddress) {
         for (int i = memory.jumpTable[j]->getStartAddr();
@@ -28,15 +26,15 @@ void deleteAllDirtyBlocks(c8::Memory &memory, uint16_t dirtyAddress) {
           memory.startAddressTable[i] = 0;
         }
         memory.jumpTable[j].reset();
-        memory.jumpTable[j] = NULL;
+        memory.jumpTable[j] = nullptr;
       }
     }
   }
 }
 
 void deleteAllDirtyBlocksRange(c8::Memory &memory, uint16_t dirtyAddressStart, uint16_t dirtyAddressEnd) {
-  for (int j = 0; j < memory.jumpTable.size(); j++) {
-    if (memory.jumpTable[j] != NULL) {
+  for (size_t j = 0; j < memory.jumpTable.size(); j++) {
+    if (memory.jumpTable[j] != nullptr) {
       if (memory.jumpTable[j]->getStartAddr() <= dirtyAddressEnd &&
           dirtyAddressStart <= memory.jumpTable[j]->getEndAddr()) {
         for (int i = memory.jumpTable[j]->getStartAddr();
@@ -44,7 +42,7 @@ void deleteAllDirtyBlocksRange(c8::Memory &memory, uint16_t dirtyAddressStart, u
           memory.startAddressTable[i] = 0;
         }
         memory.jumpTable[j].reset();
-        memory.jumpTable[j] = NULL;
+        memory.jumpTable[j] = nullptr;
       }
     }
   }
@@ -52,8 +50,7 @@ void deleteAllDirtyBlocksRange(c8::Memory &memory, uint16_t dirtyAddressStart, u
 
 void markStartTableToBasicBlock(c8::Memory &memory,
                std::unique_ptr<BasicBlock> &basicBlock) {
-
-  for (int i = basicBlock->getStartAddr(); i < basicBlock->getEndAddr(); i++) {
+  for (int i = basicBlock->getStartAddr(); i < basicBlock->getEndAddr()+2; i++) {
     memory.startAddressTable[i] = basicBlock->getStartAddr();
   }
 }
@@ -61,14 +58,14 @@ void markStartTableToBasicBlock(c8::Memory &memory,
 void compileNextBlockIfNeeded(CPU &cpu, asmjit::JitRuntime &rt, c8::Memory &memory, uint16_t &currentAddress) {
   if (memory.startAddressTable[currentAddress] != currentAddress) {
     if (memory.startAddressTable[currentAddress] == 0 &&
-        memory.jumpTable[currentAddress] != NULL) // This block is dirty
+        memory.jumpTable[currentAddress] != nullptr) // This block is dirty
     {
       std::cout << "Dirty" << std::hex << currentAddress << std::endl;
       deleteAllDirtyBlocks(
           memory, currentAddress); // Find all dirty blocks and delete them
     }
     // Compile new block
-    if (memory.jumpTable[currentAddress] == NULL) {
+    if (memory.jumpTable[currentAddress] == nullptr) {
       auto res = Parser::parseBasicBlock(memory.memory, currentAddress);
       auto basicBlock =
           std::make_unique<BasicBlock>(std::move(res), cpu, memory, rt);
@@ -78,8 +75,8 @@ void compileNextBlockIfNeeded(CPU &cpu, asmjit::JitRuntime &rt, c8::Memory &memo
   }
 }
 
-void invalidiateAndRecompileIfWroteToOwnBlock(CPU &cpu, asmjit::JitRuntime &rt, c8::Memory &memory,
-               uint16_t &currentAddress, uint64_t &returnAddress) 
+void invalidateAndRecompileIfWroteToOwnBlock(CPU &cpu, asmjit::JitRuntime &rt, c8::Memory &memory,
+                                             uint16_t &currentAddress, uint64_t &returnAddress)
 {
 
     uint16_t writeStartAddress = (returnAddress >> 16) & 0xFFF;
@@ -117,7 +114,6 @@ runtimeInformation_t startJit(CPU &cpu, std::vector<uint8_t> &rom) {
   
   JitRuntime rt;
   c8::Memory memory;
-  srand(time(NULL));
   std::copy(rom.begin(), rom.end(), memory.memory.begin() + 0x200);
 
   auto startTime = std::chrono::high_resolution_clock::now();
@@ -132,10 +128,9 @@ runtimeInformation_t startJit(CPU &cpu, std::vector<uint8_t> &rom) {
     std::cout << "Exec:" << std::hex << unsigned(currentAddress) << std::endl;
     #endif
     uint64_t returnAddress = memory.jumpTable[currentAddress]->fn();
-
     if(returnAddress&0x8000) {
       startCompile = std::chrono::high_resolution_clock::now();
-      invalidiateAndRecompileIfWroteToOwnBlock(cpu, rt, memory, currentAddress, returnAddress);
+        invalidateAndRecompileIfWroteToOwnBlock(cpu, rt, memory, currentAddress, returnAddress);
       doneCompile = std::chrono::high_resolution_clock::now();
       timeInfo.compilerRuntime += doneCompile - startCompile;
     }
@@ -160,9 +155,32 @@ int startSfml(struct threadData data);
 
 int main(int argc, char *argv[])
 {
-    CPU cpu;
-    std::ifstream file(argv[1], std::ios::binary);  // Replace "example.txt" with your file's path
+    int opt;
+    uint32_t slowdown = 0;
+    std::string filepath;
 
+    // Shut GetOpt error messages down (return '?'):
+    opterr = 0;
+
+    // Retrieve the options:
+    while ( (opt = getopt(argc, argv, "t:")) != -1 ) {  // for each option...
+        switch ( opt ) {
+            case 't':
+                slowdown = std::stoi(optarg);
+                break;
+            case '?':  // unknown option...
+                std::cerr << "Usage chip8 <-t slowdown> filepath_rom";
+                break;
+        }
+    }
+    if(optind < argc)
+    {
+        filepath = argv[optind];
+    }
+
+    CPU cpu;
+    cpu.slowdown = slowdown;
+    std::ifstream file(filepath, std::ios::binary);  // Replace "example.txt" with your file's path
     if (file) {
         // Find the file size
         file.seekg(0, std::ios::end);
@@ -206,7 +224,7 @@ int startSfml(struct threadData data) {
     window->setFramerateLimit(60);
     while (window->isOpen())
     {
-        sf::Event event;
+        sf::Event event{};
         while (window->pollEvent(event))
         {
             if (event.type == sf::Event::KeyPressed){
@@ -221,11 +239,11 @@ int startSfml(struct threadData data) {
         window->clear(sf::Color::Black);
         sf::RectangleShape shape(sf::Vector2f(10.f,10.f));
         shape.setFillColor(sf::Color(255,255,255));
-        for(int y = 0; y < cpu->display.kHeight; y++)
+        for(int y = 0; y < Display::kHeight; y++)
         {
-            for(int x = 0; x < cpu->display.kWidth/8;x++)
+            for(int x = 0; x < Display::kWidth/8;x++)
             {
-                uint8_t prnt = cpu->display.data[y*cpu->display.kWidth/8+x];
+                uint8_t prnt = cpu->display.data[y*Display::kWidth/8+x];
                 for(int i=0;i<8;i++)
                 {
                     if(prnt&(1<<(7-i))){

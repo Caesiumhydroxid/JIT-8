@@ -1,7 +1,7 @@
 #ifndef _CPU_H_
 #define _CPU_H_
 #include <cinttypes>
-#include<SFML/Graphics.hpp>
+#include <SFML/Graphics.hpp>
 #include "display.h"
 
 class CPU{
@@ -11,6 +11,8 @@ class CPU{
         static const int STACK_SIZE = 16;
         static const int AMOUNT_BUTTONS = 16;
 
+        
+        uint64_t slowdown = 0;
         uint8_t regs[AMOUNT_REGISTERS] = {0};
         uint16_t stack[STACK_SIZE] = {0};
         uint8_t buttons[AMOUNT_BUTTONS] = {0};

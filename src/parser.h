@@ -54,21 +54,21 @@ class Parser{
     public:
 
     template <std::size_t N> 
-    static std::unique_ptr<BasicBlock::BasicBlockInformation> parseBasicBlock(typename std::array<uint8_t,N> code, int pos, int maxPos = 0xFFFFFFF){
+    static std::unique_ptr<BasicBlock::BasicBlockInformation> parseBasicBlock(typename std::array<uint8_t,N> code, int pos, size_t maxPos = 0xFFFFFFF){
         auto blockInformation = std::make_unique<BasicBlock::BasicBlockInformation>();
         uint16_t amountInstructions = 0;
         blockInformation->startingAddress = pos;
         blockInformation->usedRegisters = std::bitset<CPU::AMOUNT_REGISTERS>();
         auto prevInstr = std::optional<Instruction>{};
-        int i = pos;
-        for(int i = pos; i < code.size() && i < maxPos; i++)
+
+        for(size_t i = pos; i < code.size() && i < maxPos; i++)
         {
             uint16_t assembledInstruction = code[i] << 8;
             i++;
             assembledInstruction |= code[i];
             auto parsedInstr = parse(assembledInstruction);
             blockInformation->usedRegisters |= parseUsedRegisters(assembledInstruction);
-            blockInformation->instructions.push_back(assembledInstruction);
+            blockInformation->instructions.emplace_back(assembledInstruction);
             if(isJumpInstruction(parsedInstr,prevInstr)){
                 break;
             }

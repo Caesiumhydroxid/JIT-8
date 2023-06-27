@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <bitset>
+#include "asmjit/core/operand.h"
 #include "types.h"
 #include "memory.h"
 #include "cpu.h"
@@ -47,7 +48,7 @@ class BasicBlock {
                                         asmjit::x86::Compiler &cc, 
                                         const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers);
         
-        
+        std::vector<asmjit::Label> jumpingLocations;
 
     public:
         BasicBlock( std::unique_ptr<BasicBlockInformation> information,
@@ -56,6 +57,7 @@ class BasicBlock {
                     asmjit::JitRuntime& rt);
         int getStartAddr();
         int getEndAddr();
+        asmjit::Label getLabelAccodingToAddress(uint16_t address);
         BasicBlockFunction fn;
 };
 

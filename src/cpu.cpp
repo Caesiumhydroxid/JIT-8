@@ -42,5 +42,6 @@ void CPU::setKeyState(sf::Keyboard::Key k, bool state)
         case sf::Keyboard::X:    buttons[0x0]=state; break;
         case sf::Keyboard::C:    buttons[0xB]=state; break;
         case sf::Keyboard::V:    buttons[0xF]=state; break;
+        default:                 break;
     }
 }

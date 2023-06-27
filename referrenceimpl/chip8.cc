@@ -130,7 +130,7 @@ int main(int argc, char** argv)
     cpu.Load(argv[1]);
 
     // Create a screen.
-    SDL_Window* window = SDL_CreateWindow(argv[1], SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, W*4,H*6, SDL_WINDOW_RESIZABLE);
+    SDL_Window* window = SDL_CreateWindow("My window", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, W*4,H*6, SDL_WINDOW_RESIZABLE);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, 0);
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, W,H);
 
@@ -165,7 +165,7 @@ int main(int argc, char** argv)
     SDL_OpenAudio(&spec, &obtained);
     SDL_PauseAudio(0);
 
-    unsigned insns_per_frame       = 5000000; // 50 for most chip8 programs
+    unsigned insns_per_frame       = 50000000; // 50 for most chip8 programs
     unsigned max_consecutive_insns = 0;
     int frames_done = 0;
     bool interrupted = false;
@@ -184,8 +184,9 @@ int main(int argc, char** argv)
                 auto endTime =  std::chrono::high_resolution_clock::now();
                 std::chrono::duration<double ,std::micro> dur = endTime - startTime;
                 std::cout << "Total Execution Time: " << dur.count() << "μs" << std::endl;
-                break;
                 interrupted = true;
+                SDL_Quit();
+                return 0;
             }
         }
         // Process events.
