@@ -5,7 +5,7 @@
 #include <chrono>
 #include "asmjit/core/operand.h"
 #include "parser.h"
-#include "cpu.h"
+#include "hardware.h"
 #include "memory.h"
 #include "instruction.h"
 #include "constants.h"
@@ -15,7 +15,7 @@ using namespace asmjit;
 
 
 BasicBlock::BasicBlock( std::unique_ptr<BasicBlockInformation> information,
-                        CPU &cpu, 
+                        Hardware &cpu, 
                         c8::Memory &mem,
                         asmjit::JitRuntime &rt)
 {
@@ -49,7 +49,7 @@ void generateSleepCode(x86::Compiler &cc, uint64_t slowdown){
     cc.pop(asmjit::x86::rax);
 }
 
-void BasicBlock::compile(CPU &cpu, c8::Memory &mem,asmjit::JitRuntime &rt){
+void BasicBlock::compile(Hardware &cpu, c8::Memory &mem,asmjit::JitRuntime &rt){
     
     uint16_t pc = this->info->startingAddress;
     code.init(rt.environment(),rt.cpuFeatures());
@@ -60,7 +60,7 @@ void BasicBlock::compile(CPU &cpu, c8::Memory &mem,asmjit::JitRuntime &rt){
     auto func = cc.addFunc(FuncSignatureT<uint64_t>());
     auto CPU_BASE = cc.newUIntPtr();
     cc.mov(CPU_BASE,&cpu);
-    std::array<x86::Gp,CPU::AMOUNT_REGISTERS> registers;
+    std::array<x86::Gp,Hardware::AMOUNT_REGISTERS> registers;
     generatePrologue(cc,CPU_BASE,registers);
     std::optional<Label> jumpLab = {};
     for(size_t i=0; i<info->instructions.size();i++){
@@ -98,10 +98,10 @@ void BasicBlock::compile(CPU &cpu, c8::Memory &mem,asmjit::JitRuntime &rt){
 }
 
 void BasicBlock::generatePrologue(asmjit::x86::Compiler &cc,  asmjit::x86::Gp cpubase,
-                                    std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers)
+                                    std::array<asmjit::x86::Gp,Hardware::AMOUNT_REGISTERS> &registers)
 {
     
-    for(int i=0; i<CPU::AMOUNT_REGISTERS;i++)
+    for(int i=0; i<Hardware::AMOUNT_REGISTERS;i++)
     {
         if(info->usedRegisters.test(i))
         {
@@ -109,20 +109,20 @@ void BasicBlock::generatePrologue(asmjit::x86::Compiler &cc,  asmjit::x86::Gp cp
             std::cout<<"Load reg "<< i << std::endl;
             #endif
             registers[i] = cc.newUInt8();
-            auto memreg = x86::byte_ptr(cpubase, offsetof(CPU, regs) + static_cast<uint8_t>(i) );
+            auto memreg = x86::byte_ptr(cpubase, offsetof(Hardware, regs) + static_cast<uint8_t>(i) );
             cc.mov(registers[i],memreg);
         }
     }
 }
 
 void BasicBlock::generateEpilogue(asmjit::x86::Compiler &cc, asmjit::x86::Gp cpubase,
-                                    const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers)
+                                    const std::array<asmjit::x86::Gp,Hardware::AMOUNT_REGISTERS> &registers)
 {
-    for(int i=0; i<CPU::AMOUNT_REGISTERS;i++)
+    for(int i=0; i<Hardware::AMOUNT_REGISTERS;i++)
     {
         if(info->usedRegisters.test(i))
         {
-            auto memreg = x86::byte_ptr(cpubase, offsetof(CPU, regs) + static_cast<uint8_t>(i) );
+            auto memreg = x86::byte_ptr(cpubase, offsetof(Hardware, regs) + static_cast<uint8_t>(i) );
             cc.mov(memreg,registers[i]);
         }
     }
@@ -144,11 +144,11 @@ int BasicBlock::getEndAddr()
 }
 
 std::optional<asmjit::Label> BasicBlock::generateInstruction(c8::Opcode instr,
-                                    const CPU &cpu, 
+                                    const Hardware &cpu, 
                                     uint16_t pc,
                                     asmjit::x86::Gp cpubase,
                                     c8::Memory &mem, asmjit::x86::Compiler &cc,
-                                    const std::array<asmjit::x86::Gp,CPU::AMOUNT_REGISTERS> &registers)
+                                    const std::array<asmjit::x86::Gp,Hardware::AMOUNT_REGISTERS> &registers)
 {
     Instruction parsedInstr = Parser::parse(instr);
     

@@ -1,15 +1,6 @@
 #include "display.h"
 #include <iostream>
 
-void Display::clearScreen()
-{
-}
-
-
-void Display::draw()
-{
-    
-}
 
 void Display::drawBytes()
 {

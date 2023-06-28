@@ -2,6 +2,7 @@
 #include <array>
 #include <bits/chrono.h>
 #include <chrono>
+#include <exception>
 #include <iostream>
 #include <iterator>
 #include <ratio>
@@ -9,7 +10,7 @@
 #include <fstream>
 #include "basicblock.h"
 #include "parser.h"
-#include "cpu.h"
+#include "hardware.h"
 #include "memory.h"
 #include <SFML/Graphics.hpp>
 #include <unistd.h>
@@ -20,11 +21,16 @@ void deleteAllDirtyBlocks(c8::Memory &memory, uint16_t dirtyAddress) {
   for (size_t j = 0; j < memory.jumpTable.size(); j++) {
     if (memory.jumpTable[j] != nullptr) {
       if (memory.jumpTable[j]->getStartAddr() <= dirtyAddress &&
-          memory.jumpTable[j]->getEndAddr() > dirtyAddress) {
+          memory.jumpTable[j]->getEndAddr()+2 > dirtyAddress) {
+
+        std::cout << "Block dirty at " <<  memory.jumpTable[j]->getStartAddr() << " " << memory.jumpTable[j]->getEndAddr() << std::endl;
+        
         for (int i = memory.jumpTable[j]->getStartAddr();
-             i < memory.jumpTable[j]->getEndAddr(); i++) {
+             i < memory.jumpTable[j]->getEndAddr()+2; i++) {
           memory.startAddressTable[i] = 0;
         }
+        
+        
         memory.jumpTable[j].reset();
         memory.jumpTable[j] = nullptr;
       }
@@ -38,7 +44,7 @@ void deleteAllDirtyBlocksRange(c8::Memory &memory, uint16_t dirtyAddressStart, u
       if (memory.jumpTable[j]->getStartAddr() <= dirtyAddressEnd &&
           dirtyAddressStart <= memory.jumpTable[j]->getEndAddr()) {
         for (int i = memory.jumpTable[j]->getStartAddr();
-             i < memory.jumpTable[j]->getEndAddr(); i++) {
+             i < memory.jumpTable[j]->getEndAddr()+2; i++) {
           memory.startAddressTable[i] = 0;
         }
         memory.jumpTable[j].reset();
@@ -51,31 +57,28 @@ void deleteAllDirtyBlocksRange(c8::Memory &memory, uint16_t dirtyAddressStart, u
 void markStartTableToBasicBlock(c8::Memory &memory,
                std::unique_ptr<BasicBlock> &basicBlock) {
   for (int i = basicBlock->getStartAddr(); i < basicBlock->getEndAddr()+2; i++) {
-    memory.startAddressTable[i] = basicBlock->getStartAddr();
+    memory.startAddressTable[i] = basicBlock->getEndAddr()+1;
   }
 }
 
-void compileNextBlockIfNeeded(CPU &cpu, asmjit::JitRuntime &rt, c8::Memory &memory, uint16_t &currentAddress) {
-  if (memory.startAddressTable[currentAddress] != currentAddress) {
-    if (memory.startAddressTable[currentAddress] == 0 &&
-        memory.jumpTable[currentAddress] != nullptr) // This block is dirty
-    {
-      std::cout << "Dirty" << std::hex << currentAddress << std::endl;
-      deleteAllDirtyBlocks(
-          memory, currentAddress); // Find all dirty blocks and delete them
+void compileNextBlockIfNeeded(Hardware &cpu, asmjit::JitRuntime &rt, c8::Memory &memory, uint16_t &currentAddress) {
+  if (memory.jumpTable[currentAddress] != nullptr) {
+    if(memory.jumpTable[currentAddress]->getEndAddr()+1 == memory.startAddressTable[memory.jumpTable[currentAddress]->getEndAddr()+1]){ // Block not dirty
+      return;
     }
-    // Compile new block
-    if (memory.jumpTable[currentAddress] == nullptr) {
+    deleteAllDirtyBlocks(
+        memory,  memory.jumpTable[currentAddress]->getEndAddr()+1 ); // Find all dirty blocks and delete them
+  } 
+  if (memory.jumpTable[currentAddress] == nullptr)  {
       auto res = Parser::parseBasicBlock(memory.memory, currentAddress);
       auto basicBlock =
           std::make_unique<BasicBlock>(std::move(res), cpu, memory, rt);
       markStartTableToBasicBlock(memory, basicBlock);
       memory.jumpTable[currentAddress] = std::move(basicBlock);
-    }
   }
 }
 
-void invalidateAndRecompileIfWroteToOwnBlock(CPU &cpu, asmjit::JitRuntime &rt, c8::Memory &memory,
+void invalidateAndRecompileIfWroteToOwnBlock(Hardware &cpu, asmjit::JitRuntime &rt, c8::Memory &memory,
                                              uint16_t &currentAddress, uint64_t &returnAddress)
 {
 
@@ -107,18 +110,21 @@ typedef struct runtimeInformation_s
   std::chrono::duration<double ,std::micro> compilerRuntime;
 } runtimeInformation_t;
 
-runtimeInformation_t startJit(CPU &cpu, std::vector<uint8_t> &rom) {
+runtimeInformation_t startJit(Hardware &cpu, std::vector<uint8_t> &rom) {
+
   runtimeInformation_t timeInfo;
   timeInfo.totalRuntime = std::chrono::microseconds(0);
   timeInfo.compilerRuntime = std::chrono::microseconds(0);
   
   JitRuntime rt;
   c8::Memory memory;
+
+  //Copy Rom to Memory
   std::copy(rom.begin(), rom.end(), memory.memory.begin() + 0x200);
 
   auto startTime = std::chrono::high_resolution_clock::now();
   uint16_t currentAddress = 0x200;
-  for (int i = 0; i < 500000000; i++) {
+  while (true) {
 
     auto startCompile = std::chrono::high_resolution_clock::now();
     compileNextBlockIfNeeded(cpu, rt, memory, currentAddress);
@@ -147,7 +153,7 @@ runtimeInformation_t startJit(CPU &cpu, std::vector<uint8_t> &rom) {
 struct threadData
 {
     sf::RenderWindow* window;
-    CPU* cpu;
+    Hardware* cpu;
 };
 
 
@@ -178,8 +184,9 @@ int main(int argc, char *argv[])
         filepath = argv[optind];
     }
 
-    CPU cpu;
-    cpu.slowdown = slowdown;
+    Hardware hardware;
+    hardware.slowdown = slowdown;
+
     std::ifstream file(filepath, std::ios::binary);  // Replace "example.txt" with your file's path
     if (file) {
         // Find the file size
@@ -192,17 +199,19 @@ int main(int argc, char *argv[])
 
         // Read the file byte-wise into the vector
         file.read(reinterpret_cast<char*>(buffer.data()), fileSize);
+        file.close();
 
-        if (file) {
+        if (buffer.data()) {
             // File reading succeeded
             std::cout << "File read successfully. Total bytes read: " << file.gcount() << std::endl;
             sf::RenderWindow window(sf::VideoMode(640, 320), "My window");
-            struct threadData data = {&window, &cpu};
+            struct threadData data = {&window, &hardware};
             window.setActive(false);
             sf::Thread thread(&startSfml,data);
             thread.launch();
-            runtimeInformation_s timeInfo = startJit(cpu,buffer);
-            //window.close();
+
+            runtimeInformation_s timeInfo = startJit(hardware,buffer);
+            
             
             std::cout << "Total Compiletime : " << timeInfo.compilerRuntime.count() << "μs" << std::endl;
             std::cout << "Total Runtime     : " << timeInfo.totalRuntime.count() << "μs" << std::endl;
@@ -212,14 +221,14 @@ int main(int argc, char *argv[])
             std::cerr << "Error reading file." << std::endl;
         }
 
-        file.close();
+        
         
     }
 }
 
 int startSfml(struct threadData data) {
     
-    CPU* cpu = data.cpu;
+    Hardware* cpu = data.cpu;
     sf::RenderWindow* window = data.window;
     window->setFramerateLimit(60);
     while (window->isOpen())
@@ -259,7 +268,7 @@ int startSfml(struct threadData data) {
         }
         window->display();
     }
-
+    exit(0);
     return 0;
 }
 

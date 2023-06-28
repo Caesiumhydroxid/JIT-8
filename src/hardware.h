@@ -4,7 +4,7 @@
 #include <SFML/Graphics.hpp>
 #include "display.h"
 
-class CPU{
+class Hardware{
     public:
         static const int REG_F = 15;
         static const int AMOUNT_REGISTERS = 16;

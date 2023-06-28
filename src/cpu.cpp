@@ -1,7 +1,7 @@
-#include "cpu.h"
+#include "hardware.h"
 #include <iostream>
 
-void CPU::printState()
+void Hardware::printState()
 {
     for(int i=0;i<AMOUNT_REGISTERS;i++)
     {
@@ -23,7 +23,7 @@ void CPU::printState()
     }
 }
 
-void CPU::setKeyState(sf::Keyboard::Key k, bool state)
+void Hardware::setKeyState(sf::Keyboard::Key k, bool state)
 {
     switch(k){
         case sf::Keyboard::Num1: buttons[0x1]=state; break;

@@ -58,8 +58,14 @@ class Parser{
         auto blockInformation = std::make_unique<BasicBlock::BasicBlockInformation>();
         uint16_t amountInstructions = 0;
         blockInformation->startingAddress = pos;
-        blockInformation->usedRegisters = std::bitset<CPU::AMOUNT_REGISTERS>();
+        blockInformation->usedRegisters = std::bitset<Hardware::AMOUNT_REGISTERS>();
         auto prevInstr = std::optional<Instruction>{};
+
+        if(pos > 1)
+        {
+            uint16_t assembledInstruction =  code[pos-2] << 8 | code[pos-1];
+            prevInstr = parse(assembledInstruction);
+        }
 
         for(size_t i = pos; i < code.size() && i < maxPos; i++)
         {
@@ -75,12 +81,12 @@ class Parser{
             prevInstr = parsedInstr;
             amountInstructions++;
         }
-        blockInformation->endAddress = pos+amountInstructions*2; 
+        blockInformation->endAddress = pos+(amountInstructions)*2; 
         return blockInformation;
     }
 
     static Instruction parse(c8::Opcode instr);
-    static std::bitset<CPU::AMOUNT_REGISTERS> parseUsedRegisters(c8::Opcode instr);
+    static std::bitset<Hardware::AMOUNT_REGISTERS> parseUsedRegisters(c8::Opcode instr);
 
     private:
         static bool isJumpInstruction(Instruction instr,std::optional<Instruction> before);
