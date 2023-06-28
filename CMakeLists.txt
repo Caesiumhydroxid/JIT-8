@@ -30,9 +30,9 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 #set(CMAKE_BUILD_TYPE Debug)
 #add_definitions(${GCC_COVERAGE_COMPILE_FLAGS})
 
-add_executable(CMakeSFMLProject ${SOURCES})
+add_executable(jit8 ${SOURCES})
 
-target_link_libraries(CMakeSFMLProject sfml-graphics asmjit)
-target_compile_features(CMakeSFMLProject PRIVATE cxx_std_17)
+target_link_libraries(jit8 sfml-graphics asmjit)
+target_compile_features(jit8 PRIVATE cxx_std_17)
 
-install(TARGETS CMakeSFMLProject)
+install(TARGETS jit8)

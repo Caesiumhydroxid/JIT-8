@@ -12,15 +12,13 @@
 
 using namespace asmjit;
 
-
-
 BasicBlock::BasicBlock( std::unique_ptr<BasicBlockInformation> information,
-                        Hardware &cpu, 
-                        c8::Memory &mem,
+                        Hardware &hardware, 
+                        Memory &mem,
                         asmjit::JitRuntime &rt)
 {
     this->info = std::move(information);
-    compile(cpu,mem,rt);
+    compile(hardware,mem,rt);
 }
 
 void generateSleepCode(x86::Compiler &cc, uint64_t slowdown){
@@ -49,7 +47,7 @@ void generateSleepCode(x86::Compiler &cc, uint64_t slowdown){
     cc.pop(asmjit::x86::rax);
 }
 
-void BasicBlock::compile(Hardware &cpu, c8::Memory &mem,asmjit::JitRuntime &rt){
+void BasicBlock::compile(Hardware &hardware, Memory &mem,asmjit::JitRuntime &rt){
     
     uint16_t pc = this->info->startingAddress;
     code.init(rt.environment(),rt.cpuFeatures());
@@ -57,11 +55,12 @@ void BasicBlock::compile(Hardware &cpu, c8::Memory &mem,asmjit::JitRuntime &rt){
     code.setLogger(&logger);
     #endif
     x86::Compiler cc(&code);
-    auto func = cc.addFunc(FuncSignatureT<uint64_t>());
-    auto CPU_BASE = cc.newUIntPtr();
-    cc.mov(CPU_BASE,&cpu);
+    cc.addFunc(FuncSignatureT<uint64_t>());
+
+    auto HARDWARE_BASE = cc.newUIntPtr();
+    cc.mov(HARDWARE_BASE,&hardware);
     std::array<x86::Gp,Hardware::AMOUNT_REGISTERS> registers;
-    generatePrologue(cc,CPU_BASE,registers);
+    generatePrologue(cc,HARDWARE_BASE,registers);
     std::optional<Label> jumpLab = {};
     for(size_t i=0; i<info->instructions.size();i++){
         jumpingLocations.push_back(cc.newLabel());
@@ -73,31 +72,33 @@ void BasicBlock::compile(Hardware &cpu, c8::Memory &mem,asmjit::JitRuntime &rt){
         std::cout << std::hex << unsigned(pc) << ": " << unsigned(instr.in) << std::endl;
         #endif 
         cc.bind(jumpingLocations[i]);
-        auto tempLabel = generateInstruction(instr,cpu,pc,CPU_BASE,mem,cc,registers);
+        auto tempLabel = generateInstruction(instr,hardware,pc,HARDWARE_BASE,mem,cc,registers);
         if(jumpLab.has_value()){
             cc.bind(jumpLab.value());
         }
         jumpLab = tempLabel;
         pc+=2;
         i++;
-        if(cpu.slowdown != 0)
+        if(hardware.slowdown != 0)
         {
-            generateSleepCode(cc, cpu.slowdown);
+            generateSleepCode(cc, hardware.slowdown);
         }
     }
-    generateEpilogue(cc,CPU_BASE,registers);
+    generateEpilogue(cc,HARDWARE_BASE,registers);
     cc.endFunc();
     cc.finalize();
     Error err = rt.add(&fn,&code);
-    #if LOGGING
     if (err) {
+        #if LOGGING
         std::cout<< asmjit::DebugUtils::errorAsString(err) << std::endl;
+        #endif
     }
+    #if LOGGING
     std::cout<<logger.data() << std::endl;
     #endif
 }
 
-void BasicBlock::generatePrologue(asmjit::x86::Compiler &cc,  asmjit::x86::Gp cpubase,
+void BasicBlock::generatePrologue(asmjit::x86::Compiler &cc,  asmjit::x86::Gp hardwarebase,
                                     std::array<asmjit::x86::Gp,Hardware::AMOUNT_REGISTERS> &registers)
 {
     
@@ -108,21 +109,22 @@ void BasicBlock::generatePrologue(asmjit::x86::Compiler &cc,  asmjit::x86::Gp cp
             #if LOGGING
             std::cout<<"Load reg "<< i << std::endl;
             #endif
+            
             registers[i] = cc.newUInt8();
-            auto memreg = x86::byte_ptr(cpubase, offsetof(Hardware, regs) + static_cast<uint8_t>(i) );
+            auto memreg = x86::byte_ptr(hardwarebase, offsetof(Hardware, regs) + static_cast<uint8_t>(i) );
             cc.mov(registers[i],memreg);
         }
     }
 }
 
-void BasicBlock::generateEpilogue(asmjit::x86::Compiler &cc, asmjit::x86::Gp cpubase,
+void BasicBlock::generateEpilogue(asmjit::x86::Compiler &cc, asmjit::x86::Gp hardwarebase,
                                     const std::array<asmjit::x86::Gp,Hardware::AMOUNT_REGISTERS> &registers)
 {
     for(int i=0; i<Hardware::AMOUNT_REGISTERS;i++)
     {
         if(info->usedRegisters.test(i))
         {
-            auto memreg = x86::byte_ptr(cpubase, offsetof(Hardware, regs) + static_cast<uint8_t>(i) );
+            auto memreg = x86::byte_ptr(hardwarebase, offsetof(Hardware, regs) + static_cast<uint8_t>(i) );
             cc.mov(memreg,registers[i]);
         }
     }
@@ -143,23 +145,22 @@ int BasicBlock::getEndAddr()
     return (*this->info).endAddress;
 }
 
-std::optional<asmjit::Label> BasicBlock::generateInstruction(c8::Opcode instr,
-                                    const Hardware &cpu, 
+std::optional<asmjit::Label> BasicBlock::generateInstruction(Opcode instr,
+                                    const Hardware &hardware, 
                                     uint16_t pc,
-                                    asmjit::x86::Gp cpubase,
-                                    c8::Memory &mem, asmjit::x86::Compiler &cc,
+                                    asmjit::x86::Gp hardwarebase,
+                                    Memory &mem, asmjit::x86::Compiler &cc,
                                     const std::array<asmjit::x86::Gp,Hardware::AMOUNT_REGISTERS> &registers)
 {
     Instruction parsedInstr = Parser::parse(instr);
     
-    using namespace c8::instruction;
     switch (parsedInstr) {
         case Instruction::CLS:
-            CLS(cpu, cc); return {};
+            CLS(hardware, cc); return {};
         case Instruction::RET:
-            RET(cpu, this, cc, cpubase, registers); return {};
-        case Instruction::JMP:          JMP     (instr,this,cc,cpubase,registers); return {};
-        case Instruction::CALL:         CALL    (instr,cpu,this,pc,cc,cpubase,registers); return {};
+            RET(hardware, this, cc, hardwarebase, registers); return {};
+        case Instruction::JMP:          JMP     (instr,this,cc,hardwarebase,registers); return {};
+        case Instruction::CALL:         CALL    (instr,hardware,this,pc,cc,hardwarebase,registers); return {};
         case Instruction::SE_VX_KK:     return SE_VX_KK(instr, cc, registers);
         case Instruction::SNE_VX_KK:    return SNE_VX_KK(instr, cc, registers);
         case Instruction::SE_VX_VY:     return SE_VX_VY(instr, cc, registers);
@@ -187,32 +188,32 @@ std::optional<asmjit::Label> BasicBlock::generateInstruction(c8::Opcode instr,
             SHL_VX(instr, cc, registers); return {};
         case Instruction::SNE_VX_VY:    return SNE_VX_VY(instr, cc, registers);
         case Instruction::LD_I:
-            LD_I(instr, cpubase, cc); return {};
+            LD_I(instr, hardwarebase, cc); return {};
         case Instruction::JMP_V0:
-            JMP_V0(instr, this, cc, cpubase, registers); return {};
+            JMP_V0(instr, this, cc, hardwarebase, registers); return {};
         case Instruction::RND:
-            RND(instr, cpubase, cc, registers); return{};
-        case Instruction::DRW:          DRW(instr,cpu,cpubase,mem,cc,registers); return{};
-        case Instruction::SKP:          return SKP(instr, cpu, cc, registers);
-        case Instruction::SKNP:         return SKNP(instr, cpu, cc, registers);
+            RND(instr, hardwarebase, cc, registers); return{};
+        case Instruction::DRW:          DRW(instr,hardware,hardwarebase,mem,cc,registers); return{};
+        case Instruction::SKP:          return SKP(instr, hardware, cc, registers);
+        case Instruction::SKNP:         return SKNP(instr, hardware, cc, registers);
         case Instruction::LD_VX_DT:
-            LD_VX_DT(instr, cpubase, cc, registers); return {};
+            LD_VX_DT(instr, hardwarebase, cc, registers); return {};
         case Instruction::LD_VX_K:
-            LD_VX_K(instr, cpu, cc, registers); return {};
+            LD_VX_K(instr, hardware, cc, registers); return {};
         case Instruction::LD_DT:
-            LD_DT(instr, cpubase, cc, registers); return {};
+            LD_DT(instr, hardwarebase, cc, registers); return {};
         case Instruction::LD_ST:
-            LD_ST(instr, cpubase, cc, registers); return {};
+            LD_ST(instr, hardwarebase, cc, registers); return {};
         case Instruction::ADD_I_VX:
-            ADD_I_VX(instr, cpubase, cc, registers); return {};
+            ADD_I_VX(instr, hardwarebase, cc, registers); return {};
         case Instruction::LD_F_VX:
-            LD_F_VX(instr, cpubase, cc, registers); return {};
+            LD_F_VX(instr, hardwarebase, cc, registers); return {};
         case Instruction::LD_B_VX:
-            LD_B_VX(instr, this, pc, cpubase, mem, cc, registers); return {};
+            LD_B_VX(instr, this, pc, hardwarebase, mem, cc, registers); return {};
         case Instruction::LD_I_VX:
-            LD_I_VX(instr, this, pc, cpubase, mem, cc, registers); return {};
+            LD_I_VX(instr, this, pc, hardwarebase, mem, cc, registers); return {};
         case Instruction::LD_VX_I:
-            LD_VX_I(instr, cpubase, mem, cc, registers); return {};
+            LD_VX_I(instr, hardwarebase, mem, cc, registers); return {};
         case Instruction::UNKNOWN:      std::cout << "Missing Instruction" << std::endl; return {};
     }
     return {};

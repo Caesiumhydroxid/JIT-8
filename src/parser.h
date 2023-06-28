@@ -85,8 +85,8 @@ class Parser{
         return blockInformation;
     }
 
-    static Instruction parse(c8::Opcode instr);
-    static std::bitset<Hardware::AMOUNT_REGISTERS> parseUsedRegisters(c8::Opcode instr);
+    static Instruction parse(Opcode instr);
+    static std::bitset<Hardware::AMOUNT_REGISTERS> parseUsedRegisters(Opcode instr);
 
     private:
         static bool isJumpInstruction(Instruction instr,std::optional<Instruction> before);

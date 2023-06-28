@@ -1,5 +1,4 @@
-#ifndef _CPU_H_
-#define _CPU_H_
+#pragma once
 #include <cinttypes>
 #include <SFML/Graphics.hpp>
 #include "display.h"
@@ -30,5 +29,3 @@ class Hardware{
         void setKeyState(sf::Keyboard::Key k, bool state);
         void printState();
 };
-
-#endif // !_CPU_H_

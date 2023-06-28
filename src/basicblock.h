@@ -10,9 +10,10 @@
 #include <bitset>
 #include "asmjit/core/operand.h"
 #include "types.h"
-#include "memory.h"
+
 #include "hardware.h"
 
+class Memory;
 typedef uint64_t (*BasicBlockFunction)(void);
 
 class BasicBlock {
@@ -22,17 +23,17 @@ class BasicBlock {
             uint16_t startingAddress;
             uint16_t endAddress;
             std::bitset<Hardware::AMOUNT_REGISTERS> usedRegisters;
-            std::vector<c8::Opcode> instructions;
+            std::vector<Opcode> instructions;
             bool writesToItself;
         };
 
-        void generatePrologue(asmjit::x86::Compiler &cc, asmjit::x86::Gp cpubase,
+        void generatePrologue(asmjit::x86::Compiler &cc, asmjit::x86::Gp hardwarebase,
                                     std::array<asmjit::x86::Gp,Hardware::AMOUNT_REGISTERS> &registers);
 
-        void generateEpilogue(asmjit::x86::Compiler &cc, asmjit::x86::Gp cpubase,
+        void generateEpilogue(asmjit::x86::Compiler &cc, asmjit::x86::Gp hardwarebase,
                                     const std::array<asmjit::x86::Gp,Hardware::AMOUNT_REGISTERS> &registers);
 
-        void compile(Hardware &cpu, c8::Memory &mem,asmjit::JitRuntime &rt);
+        void compile(Hardware &hardware, Memory &mem,asmjit::JitRuntime &rt);
 
     private:
         
@@ -40,11 +41,11 @@ class BasicBlock {
         asmjit::CodeHolder code;
         asmjit::StringLogger logger;
 
-        std::optional<asmjit::Label> generateInstruction(c8::Opcode instr,
-                                        const Hardware &cpu, 
+        std::optional<asmjit::Label> generateInstruction(Opcode instr,
+                                        const Hardware &hardware, 
                                         uint16_t pc,
-                                        asmjit::x86::Gp cpubase,
-                                        c8::Memory &mem,
+                                        asmjit::x86::Gp hardwarebase,
+                                        Memory &mem,
                                         asmjit::x86::Compiler &cc, 
                                         const std::array<asmjit::x86::Gp,Hardware::AMOUNT_REGISTERS> &registers);
         
@@ -52,8 +53,8 @@ class BasicBlock {
 
     public:
         BasicBlock( std::unique_ptr<BasicBlockInformation> information,
-                    Hardware &cpu, 
-                    c8::Memory &mem,
+                    Hardware &hardware, 
+                    Memory &mem,
                     asmjit::JitRuntime& rt);
         int getStartAddr();
         int getEndAddr();

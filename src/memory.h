@@ -1,22 +1,16 @@
-// Copyright 2021 Betamark Pty Ltd. All rights reserved.
-// Author: Shlomi Nissan (shlomi@betamark.com)
-
-#ifndef CHIP8_MEMORY_H
-#define CHIP8_MEMORY_H
+#pragma once
 
 #include <array>
 #include <cinttypes>
-
-typedef uint64_t (*BasicBlockFunction)(void);
-class BasicBlock;
-
-namespace c8 {
-
+#include <memory>
+#include "basicblock.h"
 
 class Memory {
 public:
-    static constexpr int kStartAddress = 0x200;
-    static constexpr std::array<uint8_t, 0x50> kSprites = {
+
+    static constexpr int MEMORY_SIZE = 0x1000;
+    static constexpr int START_ADDRESS = 0x200;
+    static constexpr std::array<uint8_t, 0x50> SPRITES = {
         0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
         0x20, 0x60, 0x20, 0x20, 0x70, // 1
         0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
@@ -35,33 +29,16 @@ public:
         0xF0, 0x80, 0xF0, 0x80, 0x80  // F
     };
 
-    Memory() {
-        Reset();
-    }
+    Memory();
 
-    uint8_t* getRawMemory() {
-        return memory.data();
-    }
+    uint8_t* getRawMemory();
 
-    uint16_t* getRawStartAddressTable() {
-        return startAddressTable.data();
-    }
+    uint16_t* getRawEndAddressTable();
 
-    uint8_t& operator[](int index) {
-        return memory.at(index);
-    }
+    void Reset();
 
-    void Reset() {
-        memory.fill(0);
-        startAddressTable.fill(0);
-        std::copy(begin(kSprites), end(kSprites), begin(memory));
-    }
-
-    std::array<std::unique_ptr<BasicBlock>, 0x1000> jumpTable = {0};
-    std::array<uint16_t, 0x1000> startAddressTable = {0};
-    std::array<uint8_t, 0x1000> memory = {0};
+    bool initializeFromFile(std::string path);
+    std::array<std::unique_ptr<BasicBlock>, MEMORY_SIZE> jumpTable = {0};
+    std::array<uint16_t, MEMORY_SIZE> endAddressTable = {0};
+    std::array<uint8_t, MEMORY_SIZE> memory = {0};
 };
-
-}
-
-#endif  // CHIP8_MEMORY_H

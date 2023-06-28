@@ -8,7 +8,6 @@
 #include <sstream>
 #include <array>
 
-namespace c8 {
 
 struct Opcode {
     uint16_t in;
@@ -23,6 +22,5 @@ struct Opcode {
     [[nodiscard]] uint16_t low() const { return in & 0x000F; }
 };
 
-}
 
 #endif  // CHIP8_TYPES_H

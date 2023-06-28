@@ -2,7 +2,7 @@
 
 // Standard Chip-8 instructions reference:
 // http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#3.1
-Instruction Parser::parse(c8::Opcode opcode) {
+Instruction Parser::parse(Opcode opcode) {
     switch (opcode.high()) {
         case 0x00:
             switch (opcode.byte()) {
@@ -96,7 +96,7 @@ Instruction Parser::parse(c8::Opcode opcode) {
     }   
 }
 
-std::bitset<Hardware::AMOUNT_REGISTERS> Parser::parseUsedRegisters(c8::Opcode opcode) {
+std::bitset<Hardware::AMOUNT_REGISTERS> Parser::parseUsedRegisters(Opcode opcode) {
     switch (opcode.high()) {
         case 0x00:
             switch (opcode.byte()) {

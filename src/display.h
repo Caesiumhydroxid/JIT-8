@@ -1,6 +1,7 @@
 #ifndef CHIP8_DISPLAY_H
 #define CHIP8_DISPLAY_H
 
+#include "SFML/Graphics/RenderWindow.hpp"
 #include <array>
 #include <vector>
 #include <cinttypes>
@@ -11,12 +12,13 @@
 
 class Display {
 public:
-    static constexpr int kWidth = 64;
-    static constexpr int kHeight = 32;
-    static constexpr int kScale = 10;
+    static constexpr int WIDTH = 64;
+    static constexpr int HEIGHT = 32;
+    static constexpr int SCALE = 10;
 
     void drawBytes();
-    uint8_t data[kWidth/8 * kHeight] = {0};
+    void drawToRenderWindow(sf::RenderWindow* const window);
+    uint8_t data[WIDTH/8 * HEIGHT] = {0};
 };
 
 
