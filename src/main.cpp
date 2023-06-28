@@ -4,174 +4,23 @@
 #include "hardware.h"
 #include "memory.h"
 #include "parser.h"
+#include "jit.h"
 #include <SFML/Graphics.hpp>
 #include <array>
 #include <asmjit/asmjit.h>
 #include <bits/chrono.h>
 #include <chrono>
-#include <exception>
 #include <fstream>
 #include <iostream>
 #include <iterator>
-#include <ratio>
 #include <unistd.h>
 #include <vector>
-using namespace asmjit;
-
-void deleteAllDirtyBlocks(Memory &memory, uint16_t dirtyAddress) {
-  for (size_t j = 0; j < memory.jumpTable.size(); j++) {
-    if (memory.jumpTable[j] != nullptr) {
-      if (memory.jumpTable[j]->getStartAddr() <= dirtyAddress &&
-          memory.jumpTable[j]->getEndAddr() + 2 > dirtyAddress) {
-
-#if LOGGING
-        std::cout << "Block dirty at " << memory.jumpTable[j]->getStartAddr()
-                  << " " << memory.jumpTable[j]->getEndAddr() << std::endl;
-#endif
-
-        for (int i = memory.jumpTable[j]->getStartAddr();
-             i < memory.jumpTable[j]->getEndAddr() + 2; i++) {
-          memory.endAddressTable[i] = 0;
-        }
-
-        memory.jumpTable[j].reset();
-        memory.jumpTable[j] = nullptr;
-      }
-    }
-  }
-}
-
-void deleteAllDirtyBlocksRange(Memory &memory, uint16_t dirtyAddressStart,
-                               uint16_t dirtyAddressEnd) {
-  for (size_t j = 0; j < memory.jumpTable.size(); j++) {
-    if (memory.jumpTable[j] != nullptr) {
-      if (memory.jumpTable[j]->getStartAddr() <= dirtyAddressEnd &&
-          dirtyAddressStart <= memory.jumpTable[j]->getEndAddr()) {
-        for (int i = memory.jumpTable[j]->getStartAddr();
-             i < memory.jumpTable[j]->getEndAddr() + 2; i++) {
-          memory.endAddressTable[i] = 0;
-        }
-        memory.jumpTable[j].reset();
-        memory.jumpTable[j] = nullptr;
-      }
-    }
-  }
-}
-
-void markEndAddrTableToBasicBlock(Memory &memory,
-                                std::unique_ptr<BasicBlock> &basicBlock) {
-  for (int i = basicBlock->getStartAddr(); i < basicBlock->getEndAddr() + 2;
-       i++) {
-    memory.endAddressTable[i] = basicBlock->getEndAddr() + 1;
-  }
-}
-
-void compileNextBlockIfNeeded(Hardware &hardware, asmjit::JitRuntime &rt,
-                              Memory &memory, uint16_t &currentAddress) {
-  if (memory.jumpTable[currentAddress] != nullptr) {
-    if (memory.jumpTable[currentAddress]->getEndAddr() + 1 ==
-        memory
-            .endAddressTable[memory.jumpTable[currentAddress]->getEndAddr() +
-                               1]) { // Block not dirty
-      return;
-    }
-    deleteAllDirtyBlocks(memory,
-                         memory.jumpTable[currentAddress]->getEndAddr() +
-                             1); // Find all dirty blocks and delete them
-  }
-  if (memory.jumpTable[currentAddress] == nullptr) {
-    auto res = Parser::parseBasicBlock(memory.memory, currentAddress);
-
-    auto basicBlock =
-        std::make_unique<BasicBlock>(std::move(res), hardware, memory, rt);
-
-    markEndAddrTableToBasicBlock(memory, basicBlock);
-    memory.jumpTable[currentAddress] = std::move(basicBlock);
-  }
-}
-
-void invalidateAndRecompileIfWroteToOwnBlock(Hardware &hardware,
-                                             asmjit::JitRuntime &rt,
-                                             Memory &memory,
-                                             uint16_t &currentAddress,
-                                             uint64_t &returnAddress) {
-
-  uint16_t writeStartAddress = (returnAddress >> 16) & 0xFFF;
-  // The block wrote to itself (and stoppped execution after this write)
-  // Invalidate all dirty blocks
-  uint16_t programCounterAtIssue = returnAddress & 0xFFF;
-
-#if LOGGING
-  std::cout << "It happened!! " << std::hex << programCounterAtIssue << " "
-            << writeStartAddress << std::endl;
-#endif
-
-  deleteAllDirtyBlocksRange(memory, writeStartAddress, writeStartAddress + 16);
-
-  // We also compile a block which goes only up to the write so it should need
-  // less recompiles
-  auto res = Parser::parseBasicBlock(memory.memory, currentAddress,
-                                     programCounterAtIssue + 2);
-  auto basicBlock =
-      std::make_unique<BasicBlock>(std::move(res), hardware, memory, rt);
-  markEndAddrTableToBasicBlock(memory, basicBlock);
-  memory.jumpTable[currentAddress] = std::move(basicBlock);
-  currentAddress = programCounterAtIssue + 2;
-}
 
 typedef struct runtimeInformation_s {
   std::chrono::duration<double, std::micro> totalRuntime;
   std::chrono::duration<double, std::micro> compilerRuntime;
 } runtimeInformation_t;
 
-runtimeInformation_t startJit(Hardware &hardware, std::string path) {
-
-  runtimeInformation_t timeInfo;
-  timeInfo.totalRuntime = std::chrono::microseconds(0);
-  timeInfo.compilerRuntime = std::chrono::microseconds(0);
-
-  JitRuntime rt;
-  Memory memory;
-  if (!memory.initializeFromFile(path)) {
-    std::cerr << "Error Loading Rom" << std::endl;
-    exit(1);
-  }
-
-  auto startTime = std::chrono::high_resolution_clock::now();
-  uint16_t currentAddress = Memory::START_ADDRESS;
-
-  while (true) {
-
-    auto startCompile = std::chrono::high_resolution_clock::now();
-    compileNextBlockIfNeeded(hardware, rt, memory, currentAddress);
-    auto doneCompile = std::chrono::high_resolution_clock::now();
-    timeInfo.compilerRuntime += doneCompile - startCompile;
-
-#if LOGGING
-    std::cout << "Exec:" << std::hex << unsigned(currentAddress) << std::endl;
-#endif
-
-    uint64_t returnAddress = memory.jumpTable[currentAddress]->fn();
-    if (returnAddress == (((uint64_t)0) - 1)) {
-      std::cerr << "Buffer Overflow within the Rom" << std::endl;
-      exit(1);
-    }
-
-    if (returnAddress & 0x8000) {
-      startCompile = std::chrono::high_resolution_clock::now();
-      invalidateAndRecompileIfWroteToOwnBlock(hardware, rt, memory,
-                                              currentAddress, returnAddress);
-      doneCompile = std::chrono::high_resolution_clock::now();
-      timeInfo.compilerRuntime += doneCompile - startCompile;
-    } else {
-      currentAddress = returnAddress & 0xFFF;
-    }
-    if (currentAddress == 0)
-      break;
-  }
-  timeInfo.totalRuntime = std::chrono::high_resolution_clock::now() - startTime;
-  return timeInfo;
-}
 
 struct threadData {
   sf::RenderWindow *window;
@@ -179,6 +28,7 @@ struct threadData {
 };
 
 int startSfml(struct threadData data);
+runtimeInformation_t startJit(Hardware &hardware, std::string path);
 
 int main(int argc, char *argv[]) {
   int opt;
@@ -220,6 +70,55 @@ int main(int argc, char *argv[]) {
   std::cout << "Compile percentage: "
             << timeInfo.compilerRuntime.count() / timeInfo.totalRuntime.count()
             << "%" << std::endl;
+}
+
+runtimeInformation_t startJit(Hardware &hardware, std::string path) {
+
+  runtimeInformation_t timeInfo;
+  timeInfo.totalRuntime = std::chrono::microseconds(0);
+  timeInfo.compilerRuntime = std::chrono::microseconds(0);
+
+  asmjit::JitRuntime rt;
+  Memory memory;
+  if (!memory.initializeFromFile(path)) {
+    std::cerr << "Error Loading Rom" << std::endl;
+    exit(1);
+  }
+
+  auto startTime = std::chrono::high_resolution_clock::now();
+  uint16_t currentAddress = Memory::START_ADDRESS;
+
+  while (true) {
+
+    auto startCompile = std::chrono::high_resolution_clock::now();
+    compileNextBlockIfNeeded(hardware, rt, memory, currentAddress);
+    auto doneCompile = std::chrono::high_resolution_clock::now();
+    timeInfo.compilerRuntime += doneCompile - startCompile;
+
+#if LOGGING
+    std::cout << "Exec:" << std::hex << unsigned(currentAddress) << std::endl;
+#endif
+
+    uint64_t returnAddress = memory.jumpTable[currentAddress]->fn();
+    if (returnAddress == (((uint64_t)0) - 1)) {
+      std::cerr << "Buffer Overflow within the Rom" << std::endl;
+      exit(1);
+    }
+
+    if (returnAddress & 0x8000) {
+      startCompile = std::chrono::high_resolution_clock::now();
+      invalidateAndRecompileIfWroteToOwnBlock(hardware, rt, memory,
+                                              currentAddress, returnAddress);
+      doneCompile = std::chrono::high_resolution_clock::now();
+      timeInfo.compilerRuntime += doneCompile - startCompile;
+    } else {
+      currentAddress = returnAddress & 0xFFF;
+    }
+    if (currentAddress == 0)
+      break;
+  }
+  timeInfo.totalRuntime = std::chrono::high_resolution_clock::now() - startTime;
+  return timeInfo;
 }
 
 int startSfml(struct threadData data) {
