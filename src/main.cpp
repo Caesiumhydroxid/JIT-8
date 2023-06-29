@@ -1,20 +1,15 @@
 #include "basicblock.h"
 #include "constants.h"
-#include "display.h"
 #include "hardware.h"
 #include "memory.h"
 #include "parser.h"
 #include "jit.h"
 #include <SFML/Graphics.hpp>
-#include <array>
 #include <asmjit/asmjit.h>
-#include <bits/chrono.h>
 #include <chrono>
 #include <fstream>
 #include <iostream>
-#include <iterator>
 #include <unistd.h>
-#include <vector>
 
 typedef struct runtimeInformation_s {
   std::chrono::duration<double, std::micro> totalRuntime;
