@@ -2,6 +2,11 @@
 
 JIT 8 is a CHIP-8 just-in-time compiler to x86-64 (currently only supporting Linux, the only platform specific code is a sleep syscall). It is built using ASMJIT and SFML.
 
+# Dependencies
+
+* [ASMJIT](https://asmjit.com/) for JIT compilation
+* [SFML](https://www.sfml-dev.org/) for Graphics
+
 ## Building
 The Project uses CMake:
 
@@ -31,3 +36,11 @@ e.g to play the Blinky ROM you need to enable the quirks using flags -s -i
 ```
 ./jit8 -t 500000 -s -i  ../rom/c8games/BLINKY
 ```
+
+### References
+
+The Interpreter that was used for comparison:
+https://bisqwit.iki.fi/jutut/kuvat/programming_examples/chip8/chip8.cc
+
+Basic parsing and some structure was taken from this project:
+https://github.com/shlomnissan/chip8
