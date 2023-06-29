@@ -1,19 +1,23 @@
 #include "jit.h"
 #include "parser.h"
 
-void deleteAllDirtyBlocks(Memory &memory, uint16_t dirtyAddress) {
-  for (size_t j = 0; j < memory.jumpTable.size(); j++) {
-    if (memory.jumpTable[j] != nullptr) {
+void deleteAllDirtyBlocks(Memory &memory, uint16_t dirtyAddress)
+{
+  for (size_t j = 0; j < memory.jumpTable.size(); j++)
+  {
+    if (memory.jumpTable[j] != nullptr)
+    {
       if (memory.jumpTable[j]->getStartAddr() <= dirtyAddress &&
-          memory.jumpTable[j]->getEndAddr() + 2 > dirtyAddress) {
-
+          memory.jumpTable[j]->getEndAddr() + 2 > dirtyAddress)
+      {
 #if LOGGING
         std::cout << "Block dirty at " << memory.jumpTable[j]->getStartAddr()
                   << " " << memory.jumpTable[j]->getEndAddr() << std::endl;
 #endif
 
         for (int i = memory.jumpTable[j]->getStartAddr();
-             i < memory.jumpTable[j]->getEndAddr() + 2; i++) {
+             i < memory.jumpTable[j]->getEndAddr() + 2; i++)
+        {
           memory.endAddressTable[i] = 0;
         }
 
@@ -25,13 +29,18 @@ void deleteAllDirtyBlocks(Memory &memory, uint16_t dirtyAddress) {
 }
 
 void deleteAllDirtyBlocksRange(Memory &memory, uint16_t dirtyAddressStart,
-                               uint16_t dirtyAddressEnd) {
-  for (size_t j = 0; j < memory.jumpTable.size(); j++) {
-    if (memory.jumpTable[j] != nullptr) {
+                               uint16_t dirtyAddressEnd)
+{
+  for (size_t j = 0; j < memory.jumpTable.size(); j++)
+  {
+    if (memory.jumpTable[j] != nullptr)
+    {
       if (memory.jumpTable[j]->getStartAddr() <= dirtyAddressEnd &&
-          dirtyAddressStart <= memory.jumpTable[j]->getEndAddr()) {
+          dirtyAddressStart <= memory.jumpTable[j]->getEndAddr())
+      {
         for (int i = memory.jumpTable[j]->getStartAddr();
-             i < memory.jumpTable[j]->getEndAddr() + 2; i++) {
+             i < memory.jumpTable[j]->getEndAddr() + 2; i++)
+        {
           memory.endAddressTable[i] = 0;
         }
         memory.jumpTable[j].reset();
@@ -42,27 +51,33 @@ void deleteAllDirtyBlocksRange(Memory &memory, uint16_t dirtyAddressStart,
 }
 
 void markEndAddrTableToBasicBlock(Memory &memory,
-                                std::unique_ptr<BasicBlock> &basicBlock) {
+                                  std::unique_ptr<BasicBlock> &basicBlock)
+{
   for (int i = basicBlock->getStartAddr(); i < basicBlock->getEndAddr() + 2;
-       i++) {
+       i++)
+  {
     memory.endAddressTable[i] = basicBlock->getEndAddr() + 1;
   }
 }
 
 void compileNextBlockIfNeeded(Hardware &hardware, asmjit::JitRuntime &rt,
-                              Memory &memory, uint16_t &currentAddress) {
-  if (memory.jumpTable[currentAddress] != nullptr) {
+                              Memory &memory, uint16_t &currentAddress)
+{
+  if (memory.jumpTable[currentAddress] != nullptr)
+  {
     if (memory.jumpTable[currentAddress]->getEndAddr() + 1 ==
         memory
             .endAddressTable[memory.jumpTable[currentAddress]->getEndAddr() +
-                               1]) { // Block not dirty
+                             1])
+    { // Block not dirty
       return;
     }
     deleteAllDirtyBlocks(memory,
                          memory.jumpTable[currentAddress]->getEndAddr() +
                              1); // Find all dirty blocks and delete them
   }
-  if (memory.jumpTable[currentAddress] == nullptr) {
+  if (memory.jumpTable[currentAddress] == nullptr)
+  {
     auto res = Parser::parseBasicBlock(memory.memory, currentAddress);
 
     auto basicBlock =
@@ -77,7 +92,8 @@ void invalidateAndRecompileIfWroteToOwnBlock(Hardware &hardware,
                                              asmjit::JitRuntime &rt,
                                              Memory &memory,
                                              uint16_t &currentAddress,
-                                             uint64_t &returnAddress) {
+                                             uint64_t &returnAddress)
+{
 
   uint16_t writeStartAddress = (returnAddress >> 16) & 0xFFF;
   // The block wrote to itself (and stoppped execution after this write)

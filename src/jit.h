@@ -5,7 +5,6 @@
 #include "hardware.h"
 #include "memory.h"
 #include <asmjit/asmjit.h>
-#include <iterator>
 
 
 void invalidateAndRecompileIfWroteToOwnBlock(Hardware &hardware,

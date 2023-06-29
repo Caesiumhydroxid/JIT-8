@@ -40,7 +40,7 @@ int main(int argc, char *argv[]) {
       slowdown = std::stoi(optarg);
       break;
     case '?': // unknown option...
-      std::cerr << "Usage chip8 <-t slowdown> filepath_rom";
+      std::cerr << "Usage chip8 <-t slowdown in ns> filepath_rom";
       break;
     }
   }
@@ -76,8 +76,8 @@ runtimeInformation_t startJit(Hardware &hardware, std::string path) {
   asmjit::JitRuntime rt;
   Memory memory;
   if (!memory.initializeFromFile(path)) {
-    std::cerr << "Error Loading Rom" << std::endl;
-    exit(1);
+    std::cerr << "Error loading Rom" << std::endl;
+    exit(EXIT_FAILURE);
   }
 
   auto startTime = std::chrono::high_resolution_clock::now();
@@ -97,7 +97,7 @@ runtimeInformation_t startJit(Hardware &hardware, std::string path) {
     uint64_t returnAddress = memory.jumpTable[currentAddress]->fn();
     if (returnAddress == (((uint64_t)0) - 1)) {
       std::cerr << "Buffer Overflow within the Rom" << std::endl;
-      exit(1);
+      exit(EXIT_FAILURE);
     }
 
     if (returnAddress & 0x8000) {
@@ -135,12 +135,11 @@ int startSfml(struct threadData data) {
     }
     window->clear(sf::Color::Black);
     data.hardware->display.drawToRenderWindow(window);
-
     if (hardware->delayTimer >= 1) {
       hardware->delayTimer--;
     }
     window->display();
   }
-  exit(0);
+  exit(EXIT_SUCCESS);
   return 0;
 }

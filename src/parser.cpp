@@ -2,10 +2,11 @@
 
 // Standard Chip-8 instructions reference:
 // http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#3.1
+
 Instruction Parser::parse(Opcode opcode) {
     switch (opcode.high()) {
         case 0x00:
-            switch (opcode.byte()) {
+            switch (opcode.kk()) {
                 // 00E0 - Clear the display.
                 case 0xE0: return Instruction::CLS;
                 // 00EE - Return from a subroutine.
@@ -28,7 +29,7 @@ Instruction Parser::parse(Opcode opcode) {
         // 7xkk - Adds the value kk to the value of register Vx.
         case 0x07: return Instruction::ADD_VX_KK;
         case 0x08:
-            switch (opcode.low()) {
+            switch (opcode.n()) {
                 // 8xy0 - Stores the value of register Vy in register Vx.
                 case 0x00: return Instruction::LD_VX_VY;
                 // 8xy1 - Performs a bitwise OR on the values of Vx and Vy.
@@ -61,7 +62,7 @@ Instruction Parser::parse(Opcode opcode) {
         // Dxyn - Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
         case 0x0D: return Instruction::DRW;
         case 0x0E:
-            switch (opcode.byte()) {
+            switch (opcode.kk()) {
                 // Ex9E - Skip instruction if key with the value of Vx is pressed.
                 case 0x9E: return Instruction::SKP;
                 // ExA1 - Skip instruction if key with the value of Vx is not pressed.
@@ -70,7 +71,7 @@ Instruction Parser::parse(Opcode opcode) {
                 default: return Instruction::UNKNOWN;
             }
         case 0x0F:
-            switch (opcode.byte()) {
+            switch (opcode.kk()) {
                 // Fx07 - Set Vx = delay timer value.
                 case 0x07: return Instruction::LD_VX_DT;
                 // Fx0A - Wait for a key press, store the value of the key in Vx.
@@ -99,7 +100,7 @@ Instruction Parser::parse(Opcode opcode) {
 std::bitset<Hardware::AMOUNT_REGISTERS> Parser::parseUsedRegisters(Opcode opcode) {
     switch (opcode.high()) {
         case 0x00:
-            switch (opcode.byte()) {
+            switch (opcode.kk()) {
                 // 00E0 - Clear the display.
                 case 0xE0: return std::bitset<Hardware::AMOUNT_REGISTERS>(0);
                 // 00EE - Return from a subroutine.
@@ -122,7 +123,7 @@ std::bitset<Hardware::AMOUNT_REGISTERS> Parser::parseUsedRegisters(Opcode opcode
         // 7xkk - Adds the value kk to the value of register Vx.
         case 0x07: return std::bitset<Hardware::AMOUNT_REGISTERS>(1<<opcode.x());
         case 0x08:
-            switch (opcode.low()) {
+            switch (opcode.n()) {
                 // 8xy0 - Stores the value of register Vy in register Vx.
                 case 0x00: return std::bitset<Hardware::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y());
                 // 8xy1 - Performs a bitwise OR on the values of Vx and Vy.
@@ -155,7 +156,7 @@ std::bitset<Hardware::AMOUNT_REGISTERS> Parser::parseUsedRegisters(Opcode opcode
         // Dxyn - Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
         case 0x0D: return std::bitset<Hardware::AMOUNT_REGISTERS>(1<<opcode.x()| 1<<opcode.y() | 0x8000);
         case 0x0E:
-            switch (opcode.byte()) {
+            switch (opcode.kk()) {
                 // Ex9E - Skip instruction if key with the value of Vx is pressed.
                 case 0x9E: return std::bitset<Hardware::AMOUNT_REGISTERS>(1<<opcode.x());
                 // ExA1 - Skip instruction if key with the value of Vx is not pressed.
@@ -164,7 +165,7 @@ std::bitset<Hardware::AMOUNT_REGISTERS> Parser::parseUsedRegisters(Opcode opcode
                 default: return std::bitset<Hardware::AMOUNT_REGISTERS>(0);
             }
         case 0x0F:
-            switch (opcode.byte()) {
+            switch (opcode.kk()) {
                 // Fx07 - Set Vx = delay timer value.
                 case 0x07: return std::bitset<Hardware::AMOUNT_REGISTERS>(1<<opcode.x());
                 // Fx0A - Wait for a key press, store the value of the key in Vx.

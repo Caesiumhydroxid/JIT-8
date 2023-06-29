@@ -214,7 +214,7 @@ std::optional<asmjit::Label> BasicBlock::generateInstruction(Opcode instr,
             LD_I_VX(instr, this, pc, hardwarebase, mem, cc, registers); return {};
         case Instruction::LD_VX_I:
             LD_VX_I(instr, hardwarebase, mem, cc, registers); return {};
-        case Instruction::UNKNOWN:      std::cout << "Missing Instruction" << std::endl; return {};
+        case Instruction::UNKNOWN:     std::cout << "Missing Instruction" << std::endl; return {};
     }
     return {};
 }

@@ -43,14 +43,14 @@ void JMP(
     Opcode instr, BasicBlock *basicBlock, asmjit::x86::Compiler &cc,
     asmjit::x86::Gp hardwarebase,
     const std::array<asmjit::x86::Gp, Hardware::AMOUNT_REGISTERS> &registers) {
-  if (basicBlock->getStartAddr() <= instr.address() &&
-      instr.address() <= basicBlock->getEndAddr()) {
-    cc.jmp(basicBlock->getLabelAccodingToAddress(instr.address()));
+  if (basicBlock->getStartAddr() <= instr.nnn() &&
+      instr.nnn() <= basicBlock->getEndAddr()) {
+    cc.jmp(basicBlock->getLabelAccodingToAddress(instr.nnn()));
   } else {
     basicBlock->generateEpilogue(cc, hardwarebase, registers);
     auto val = cc.newUInt64();
     cc.xor_(val, val);
-    cc.mov(val.r16(), instr.address());
+    cc.mov(val.r16(), instr.nnn());
     cc.ret(val);
   }
 }
@@ -71,14 +71,14 @@ void CALL(
   cc.mov(asmjit::x86::ptr_16(ptr), pc + 2);
   cc.inc(stackPointer);
 
-  if (basicBlock->getStartAddr() <= instr.address() &&
-      instr.address() <= basicBlock->getEndAddr()) {
-    cc.jmp(basicBlock->getLabelAccodingToAddress(instr.address()));
+  if (basicBlock->getStartAddr() <= instr.nnn() &&
+      instr.nnn() <= basicBlock->getEndAddr()) {
+    cc.jmp(basicBlock->getLabelAccodingToAddress(instr.nnn()));
   } else {
     basicBlock->generateEpilogue(cc, hardwarebase, registers);
     auto val = cc.newUInt64();
     cc.xor_(val, val);
-    cc.mov(val.r16(), instr.address());
+    cc.mov(val.r16(), instr.nnn());
     cc.ret(val);
   }
 }
@@ -87,7 +87,7 @@ std::optional<asmjit::Label> SE_VX_KK(
     Opcode instr, asmjit::x86::Compiler &cc,
     const std::array<asmjit::x86::Gp, Hardware::AMOUNT_REGISTERS> &registers) {
   asmjit::Label ljump = cc.newLabel();
-  cc.cmp(registers[instr.x()], instr.byte());
+  cc.cmp(registers[instr.x()], instr.kk());
   cc.je(ljump);
   return ljump;
 }
@@ -97,7 +97,7 @@ std::optional<asmjit::Label> SNE_VX_KK(
     Opcode instr, asmjit::x86::Compiler &cc,
     const std::array<asmjit::x86::Gp, Hardware::AMOUNT_REGISTERS> &registers) {
   asmjit::Label ljump = cc.newLabel();
-  cc.cmp(registers[instr.x()], instr.byte());
+  cc.cmp(registers[instr.x()], instr.kk());
   cc.jne(ljump);
   return ljump;
 }
@@ -111,18 +111,19 @@ std::optional<asmjit::Label> SE_VX_VY(
   cc.je(ljump);
   return ljump;
 }
+
 // 6xkk - The interpreter puts the value kk into register Vx.
 void LD_VX_KK(
     Opcode instr, asmjit::x86::Compiler &cc,
     const std::array<asmjit::x86::Gp, Hardware::AMOUNT_REGISTERS> &registers) {
-  cc.mov(registers[instr.x()], instr.byte());
+  cc.mov(registers[instr.x()], instr.kk());
 }
 
 // 7xkk - Adds the value kk to the value of register Vx.
 void ADD_VX_KK(
     Opcode instr, asmjit::x86::Compiler &cc,
     const std::array<asmjit::x86::Gp, Hardware::AMOUNT_REGISTERS> &registers) {
-  cc.add(registers[instr.x()], instr.byte());
+  cc.add(registers[instr.x()], instr.kk());
 }
 
 // 8xy0 - Stores the value of register Vy in register Vx.
@@ -214,7 +215,7 @@ void LD_I(Opcode instr, asmjit::x86::Gp hardwarebase,
           asmjit::x86::Compiler &cc) {
   auto memreg =
       asmjit::x86::ptr_16(hardwarebase, offsetof(Hardware, indexRegister));
-  cc.mov(memreg, instr.address());
+  cc.mov(memreg, instr.nnn());
 }
 
 // Bnnn - Program counter is set to nnn plus the value of V0.
@@ -226,7 +227,7 @@ void JMP_V0(
   auto retVal = cc.newUInt64();
   cc.xor_(retVal, retVal);
   cc.mov(retVal.r8(), registers[0]);
-  cc.add(retVal, instr.address());
+  cc.add(retVal, instr.nnn());
   cc.ret(retVal);
 }
 
@@ -234,7 +235,7 @@ void JMP_V0(
 void RND(
     Opcode instr, asmjit::x86::Gp hardwarebase, asmjit::x86::Compiler &cc,
     const std::array<asmjit::x86::Gp, Hardware::AMOUNT_REGISTERS> &registers) {
-  auto lfsrReg = asmjit::x86::ptr_32(hardwarebase, offsetof(Hardware, rng));
+  auto lfsrReg = asmjit::x86::ptr_32(hardwarebase, offsetof(Hardware, rngstate));
   auto b = cc.newUInt32();
   cc.mov(b, lfsrReg);
   cc.and_(b, 1);
@@ -242,8 +243,8 @@ void RND(
   cc.and_(b, 0xc3308398);
   cc.shr(lfsrReg, 1);
   cc.xor_(lfsrReg, b);
-  cc.mov(registers[instr.x()].r8(), lfsrReg);
-  cc.and_(registers[instr.x()], instr.byte());
+  cc.mov(registers[instr.x()], lfsrReg);
+  cc.and_(registers[instr.x()], instr.kk());
 }
 
 // Dxyn - Display n-byte sprite starting at memory location I at (Vx, Vy), set
@@ -267,20 +268,20 @@ void DRW(
   cc.xor_(test.r64(), test.r64());
   cc.mov(test, indexRegisterValue);
 
+  //Check Memory Bounds
   auto cont = cc.newLabel();
-  cc.cmp(test, Memory::MEMORY_SIZE - instr.low());
+  cc.cmp(test, Memory::MEMORY_SIZE - instr.n());
   cc.jl(cont);
-
   auto retVal = cc.newUInt64();
   cc.xor_(retVal, retVal);
   cc.sub(retVal, 1);
   cc.ret(retVal);
-
   cc.bind(cont);
 
   cc.mov(simI, reinterpret_cast<uint64_t>(mem.memory.data()));
   cc.add(simI, test.r64());
 
+  //Calculate left and right byte to draw in
   auto rem = cc.newUInt8();
   auto div = cc.newUInt64();
   auto div2 = cc.newUInt64();
@@ -300,10 +301,11 @@ void DRW(
   cc.and_(rem.r64(), 0x7);
   cc.mov(rem2, 8);
   cc.sub(rem2, rem);
+
   auto displayOffset = cc.newUIntPtr();
   auto flag = cc.newUInt8();
-
-  for (int i = 0; i < instr.low(); i++) {
+  //Draw byte per byte
+  for (int i = 0; i < instr.n(); i++) {
     cc.mov(displayOffset, reinterpret_cast<uint64_t>(hardware.display.data));
     cc.add(displayOffset, loopCounter);
 
@@ -321,8 +323,6 @@ void DRW(
     cc.xor_(asmjit::x86::ptr_8(displayOffset, div2), toPlace);
     cc.or_(registers[Hardware::REG_F], flag);
     cc.add(loopCounter, 8);
-    // We should not be able to overflow buffer since loop counter cannot grow
-    // bigger than 255 (which is the buffersize)
     cc.and_(loopCounter, 0xFF);
   }
 }
@@ -457,7 +457,7 @@ void LD_B_VX(
   cc.mov(tmp.r16(), indexRegisterValue);
 
   auto cont = cc.newLabel();
-  cc.cmp(tmp, Memory::MEMORY_SIZE - instr.low());
+  cc.cmp(tmp, Memory::MEMORY_SIZE - instr.n());
   cc.jl(cont);
   auto retVal = cc.newUInt64();
   cc.xor_(retVal, retVal);
@@ -588,7 +588,7 @@ void LD_VX_I(
   cc.mov(tmp.r16(), indexRegisterValue);
 
   auto cont = cc.newLabel();
-  cc.cmp(tmp, Memory::MEMORY_SIZE - instr.low());
+  cc.cmp(tmp, Memory::MEMORY_SIZE - instr.n());
   cc.jl(cont);
   auto retVal = cc.newUInt64();
   cc.xor_(retVal, retVal);

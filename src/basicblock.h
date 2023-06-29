@@ -1,5 +1,4 @@
-#ifndef BASIC_BLOCK_H
-#define BASIC_BLOCK_H
+#pragma once
 
 #include <cstdint>
 #include <asmjit/asmjit.h>
@@ -68,5 +67,3 @@ class BasicBlock {
          */
         BasicBlockFunction fn;
 };
-
-#endif

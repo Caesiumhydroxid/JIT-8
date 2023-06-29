@@ -1,7 +1,7 @@
 #include <memory>
 #include "memory.h"
-#include <iostream>
 #include <fstream>
+
 Memory::Memory() {
     Reset();
 }
@@ -21,7 +21,7 @@ void Memory::Reset() {
 }
 
 bool Memory::initializeFromFile(std::string path) {
-    std::ifstream file(path, std::ios::binary);  // Replace "example.txt" with your file's path
+    std::ifstream file(path, std::ios::binary);
     if (file) {
         // Find the file size
         file.seekg(0, std::ios::end);

@@ -2,6 +2,7 @@
 
 #include "basicblock.h"
 #include "types.h"
+#include "memory.h"
 #include <array>
 #include <bitset>
 #include <iostream>
@@ -25,10 +26,11 @@ enum class Instruction {
 
 class Parser {
 public:
+
   template <std::size_t N>
   static std::unique_ptr<BasicBlock::BasicBlockInformation>
   parseBasicBlock(typename std::array<uint8_t, N> code, int pos,
-                  size_t maxPos = 0xFFFFFFF) {
+                  size_t maxPos = Memory::MEMORY_SIZE) {
     auto blockInformation =
         std::make_unique<BasicBlock::BasicBlockInformation>();
     uint16_t amountInstructions = 0;
@@ -46,6 +48,11 @@ public:
       i++;
       assembledInstruction |= code[i];
       auto parsedInstr = parse(assembledInstruction);
+      if(parsedInstr == Instruction::UNKNOWN){
+        //Unknown Instruction Ends Basic Block
+        i-=2;
+        break;
+      }
       blockInformation->usedRegisters |=
           parseUsedRegisters(assembledInstruction);
       blockInformation->instructions.emplace_back(assembledInstruction);
