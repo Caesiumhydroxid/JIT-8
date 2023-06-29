@@ -51,6 +51,6 @@ build
 .ninja_log
 
 .cache
-.idea
+.idea/
 
 presentation/
