@@ -8,7 +8,7 @@ void deleteAllDirtyBlocks(Memory &memory, uint16_t dirtyAddress)
     if (memory.jumpTable[j] != nullptr)
     {
       if (memory.jumpTable[j]->getStartAddr() <= dirtyAddress &&
-          memory.jumpTable[j]->getEndAddr() + 2 > dirtyAddress)
+          memory.jumpTable[j]->getEndAddr() > dirtyAddress)
       {
 #if LOGGING
         std::cout << "Block dirty at " << memory.jumpTable[j]->getStartAddr()
@@ -16,7 +16,7 @@ void deleteAllDirtyBlocks(Memory &memory, uint16_t dirtyAddress)
 #endif
 
         for (int i = memory.jumpTable[j]->getStartAddr();
-             i < memory.jumpTable[j]->getEndAddr() + 2; i++)
+             i < memory.jumpTable[j]->getEndAddr(); i++)
         {
           memory.endAddressTable[i] = 0;
         }
@@ -39,7 +39,7 @@ void deleteAllDirtyBlocksRange(Memory &memory, uint16_t dirtyAddressStart,
           dirtyAddressStart <= memory.jumpTable[j]->getEndAddr())
       {
         for (int i = memory.jumpTable[j]->getStartAddr();
-             i < memory.jumpTable[j]->getEndAddr() + 2; i++)
+             i < memory.jumpTable[j]->getEndAddr(); i++)
         {
           memory.endAddressTable[i] = 0;
         }
@@ -53,33 +53,37 @@ void deleteAllDirtyBlocksRange(Memory &memory, uint16_t dirtyAddressStart,
 void markEndAddrTableToBasicBlock(Memory &memory,
                                   std::unique_ptr<BasicBlock> &basicBlock)
 {
-  for (int i = basicBlock->getStartAddr(); i < basicBlock->getEndAddr() + 2;
+  for (int i = basicBlock->getStartAddr(); i < basicBlock->getEndAddr();
        i++)
   {
-    memory.endAddressTable[i] = basicBlock->getEndAddr() + 1;
+    memory.endAddressTable[i] = basicBlock->getEndAddr()-1;
   }
 }
 
 void compileNextBlockIfNeeded(Hardware &hardware, asmjit::JitRuntime &rt,
                               Memory &memory, uint16_t &currentAddress)
 {
+  std::cout << "Compile: 0x" << std::hex << currentAddress << std::endl;
   if (memory.jumpTable[currentAddress] != nullptr)
   {
-    if (memory.jumpTable[currentAddress]->getEndAddr() + 1 ==
+    if (memory.jumpTable[currentAddress]->getEndAddr()-1 ==
         memory
-            .endAddressTable[memory.jumpTable[currentAddress]->getEndAddr() +
-                             1])
+            .endAddressTable[memory.jumpTable[currentAddress]->getEndAddr()-1])
     { // Block not dirty
       return;
     }
     deleteAllDirtyBlocks(memory,
-                         memory.jumpTable[currentAddress]->getEndAddr() +
-                             1); // Find all dirty blocks and delete them
+                         memory.jumpTable[currentAddress]->getEndAddr() - 1);
   }
   if (memory.jumpTable[currentAddress] == nullptr)
   {
     auto res = Parser::parseBasicBlock(memory.memory, currentAddress);
-
+    if(res->startingAddress == res->endAddress)
+    {  
+      // An empty block signals that the next instruction to execute is an unknown instruction
+      std::cerr << "Encountered unknown instruction at 0x" << std::hex << currentAddress << ", check rom?" << std::endl;
+      //exit(EXIT_FAILURE);
+    }
     auto basicBlock =
         std::make_unique<BasicBlock>(std::move(res), hardware, memory, rt);
 

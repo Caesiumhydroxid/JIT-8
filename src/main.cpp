@@ -11,6 +11,9 @@
 #include <iostream>
 #include <unistd.h>
 
+bool iRegIncrementQuirk = true;
+bool shiftQuirk = true;
+
 typedef struct runtimeInformation_s {
   std::chrono::duration<double, std::micro> totalRuntime;
   std::chrono::duration<double, std::micro> compilerRuntime;
@@ -29,19 +32,25 @@ int main(int argc, char *argv[]) {
   int opt;
   uint32_t slowdown = 0;
   std::string filepath;
-
+  
   // Shut GetOpt error messages down (return '?'):
   opterr = 0;
 
   // Retrieve the options:
-  while ((opt = getopt(argc, argv, "t:")) != -1) { // for each option...
+  while ((opt = getopt(argc, argv, "t:is")) != -1) { // for each option...
     switch (opt) {
     case 't':
       slowdown = std::stoi(optarg);
       break;
-    case '?': // unknown option...
-      std::cerr << "Usage chip8 <-t slowdown in ns> filepath_rom";
+    case 'i':
+      iRegIncrementQuirk = false;
       break;
+    case 's':
+      shiftQuirk = false;
+      break;
+    case '?': // unknown option...
+      std::cerr << "Usage: " << argv[0] << " <-t slowdown in ns> <-i reg i quirk disable>  <-s shift quirk disable> filepath_rom" << std::endl;
+      exit(EXIT_FAILURE);
     }
   }
   if (optind < argc) {
@@ -109,8 +118,11 @@ runtimeInformation_t startJit(Hardware &hardware, std::string path) {
     } else {
       currentAddress = returnAddress & 0xFFF;
     }
-    if (currentAddress == 0)
+    if (currentAddress == 0){
+      std::cout << "Finished" << std::endl;
       break;
+    }
+      
   }
   timeInfo.totalRuntime = std::chrono::high_resolution_clock::now() - startTime;
   return timeInfo;

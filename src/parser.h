@@ -36,6 +36,7 @@ public:
     uint16_t amountInstructions = 0;
     blockInformation->startingAddress = pos;
     blockInformation->usedRegisters = std::bitset<Hardware::AMOUNT_REGISTERS>();
+    blockInformation->endAddress = pos;
     auto prevInstr = std::optional<Instruction>{};
 
     if (pos > 1) {
@@ -50,17 +51,16 @@ public:
       auto parsedInstr = parse(assembledInstruction);
       if(parsedInstr == Instruction::UNKNOWN){
         //Unknown Instruction Ends Basic Block
-        i-=2;
         break;
       }
       blockInformation->usedRegisters |=
           parseUsedRegisters(assembledInstruction);
       blockInformation->instructions.emplace_back(assembledInstruction);
+      amountInstructions++;
       if (isJumpInstruction(parsedInstr, prevInstr)) {
         break;
       }
       prevInstr = parsedInstr;
-      amountInstructions++;
     }
     blockInformation->endAddress = pos + (amountInstructions)*2;
     return blockInformation;

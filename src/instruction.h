@@ -4,6 +4,7 @@
 #include "hardware.h"
 #include "memory.h"
 #include "types.h"
+#include "constants.h"
 #include <asmjit/asmjit.h>
 #include <cstdlib>
 #include <optional>
@@ -44,7 +45,7 @@ void JMP(
     asmjit::x86::Gp hardwarebase,
     const std::array<asmjit::x86::Gp, Hardware::AMOUNT_REGISTERS> &registers) {
   if (basicBlock->getStartAddr() <= instr.nnn() &&
-      instr.nnn() <= basicBlock->getEndAddr()) {
+      instr.nnn() <= basicBlock->getEndAddr()-2) {
     cc.jmp(basicBlock->getLabelAccodingToAddress(instr.nnn()));
   } else {
     basicBlock->generateEpilogue(cc, hardwarebase, registers);
@@ -72,7 +73,7 @@ void CALL(
   cc.inc(stackPointer);
 
   if (basicBlock->getStartAddr() <= instr.nnn() &&
-      instr.nnn() <= basicBlock->getEndAddr()) {
+      instr.nnn() <= basicBlock->getEndAddr()-2) {
     cc.jmp(basicBlock->getLabelAccodingToAddress(instr.nnn()));
   } else {
     basicBlock->generateEpilogue(cc, hardwarebase, registers);
@@ -175,8 +176,13 @@ void SHR_VX(
     Opcode instr, asmjit::x86::Compiler &cc,
     const std::array<asmjit::x86::Gp, Hardware::AMOUNT_REGISTERS> &registers) {
   // quirks
-  cc.mov(registers[instr.x()], registers[instr.y()]);
-  cc.shr(registers[instr.x()], 1);
+  if(shiftQuirk) {
+    cc.mov(registers[instr.x()], registers[instr.y()]);
+    cc.shr(registers[instr.x()], 1);
+  } else {
+    cc.shr(registers[instr.x()], 1);
+  }
+  
   cc.setc(registers[Hardware::REG_F]);
 }
 
@@ -195,8 +201,12 @@ void SUBN_VX_VY(
 void SHL_VX(
     Opcode instr, asmjit::x86::Compiler &cc,
     const std::array<asmjit::x86::Gp, Hardware::AMOUNT_REGISTERS> &registers) {
-  cc.mov(registers[instr.x()], registers[instr.y()]);
-  cc.shl(registers[instr.x()], 1);
+  if(shiftQuirk){
+    cc.mov(registers[instr.x()], registers[instr.y()]);
+    cc.shl(registers[instr.x()], 1);
+  } else {
+    cc.shl(registers[instr.x()], 1);
+  }
   cc.setc(registers[Hardware::REG_F]);
 }
 
@@ -494,7 +504,7 @@ void LD_B_VX(
   // compares interval of writing (I, I + 3) to [pc+2, end]
   cc.cmp(tmp, (pc + 2) - 3);
   cc.jl(ljump);
-  cc.cmp(tmp, bb->getEndAddr() + 1);
+  cc.cmp(tmp, bb->getEndAddr());
   cc.jg(ljump);
 
   bb->generateEpilogue(cc, hardwarebase, registers);
@@ -552,7 +562,9 @@ void LD_I_VX(
   cc.xor_(tmp, tmp);
   cc.mov(tmp.r16(), indexRegisterValue);
   // Quirk
-  cc.add(indexRegisterValue, instr.x() + 1);
+  if(iRegIncrementQuirk) {
+    cc.add(indexRegisterValue, instr.x() + 1);
+  }
 
   // Check if wrote into own block (that still needs to execute)
 
@@ -560,7 +572,7 @@ void LD_I_VX(
   // compares interval of writing (I, I + {x}) to [pc+2, end]
   cc.cmp(tmp, (pc + 2) - instr.x());
   cc.jl(ljump);
-  cc.cmp(tmp, bb->getEndAddr() + 1);
+  cc.cmp(tmp, bb->getEndAddr());
   cc.jg(ljump);
 
   bb->generateEpilogue(cc, hardwarebase, registers);
@@ -600,5 +612,7 @@ void LD_VX_I(
   for (int i = 0; i <= instr.x(); i++) {
     cc.mov(registers[i], asmjit::x86::byte_ptr(simI, i));
   }
-  cc.add(indexRegisterValue, instr.x() + 1);
+  if(iRegIncrementQuirk){
+    cc.add(indexRegisterValue, instr.x() + 1);
+  }
 }
