@@ -1,13 +1,19 @@
-# JIT 8
+# 🖥️ JIT-8 
 
-JIT 8 is a CHIP-8 just-in-time compiler to x86-64 (currently only supporting Linux, the only platform specific code is a sleep syscall). It is built using ASMJIT and SFML.
+JIT 8 is a CHIP-8 just-in-time compiler to x86-64 (currently only supporting Linux).
 
-# Dependencies
+Everything that is executed is compiled (no interpreter). No further optimizaion is occuring.
+On the Benchmarks it is faster the reference interpreter by a factor of ~10.
+
+For programs that use self-modifying code a lot, it can perform (much) worse than a basic interpreter.
+
+## Dependencies
 
 * [ASMJIT](https://asmjit.com/) for JIT compilation
 * [SFML](https://www.sfml-dev.org/) for Graphics
 
 ## Building
+
 The Project uses CMake:
 
 ```
