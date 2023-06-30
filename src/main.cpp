@@ -1,5 +1,5 @@
 #include "basicblock.h"
-#include "constants.h"
+#include "globals.h"
 #include "hardware.h"
 #include "memory.h"
 #include "parser.h"
@@ -95,7 +95,11 @@ runtimeInformation_t startJit(Hardware &hardware, std::string path) {
   while (true) {
 
     auto startCompile = std::chrono::high_resolution_clock::now();
-    compileNextBlockIfNeeded(hardware, rt, memory, currentAddress);
+    bool success = compileNextBlockIfNeeded(hardware, rt, memory, currentAddress);
+    if(!success){
+      std::cerr << "Error compiling function" << std::endl;
+      break;
+    }
     auto doneCompile = std::chrono::high_resolution_clock::now();
     timeInfo.compilerRuntime += doneCompile - startCompile;
 
@@ -106,7 +110,7 @@ runtimeInformation_t startJit(Hardware &hardware, std::string path) {
     uint64_t returnAddress = memory.jumpTable[currentAddress]->fn();
     if (returnAddress == (((uint64_t)0) - 1)) {
       std::cerr << "Buffer Overflow within the Rom" << std::endl;
-      exit(EXIT_FAILURE);
+      break;
     }
 
     if (returnAddress & 0x8000) {

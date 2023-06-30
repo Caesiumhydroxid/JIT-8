@@ -1,6 +1,6 @@
 #pragma once
 #include "basicblock.h"
-#include "constants.h"
+#include "globals.h"
 #include "display.h"
 #include "hardware.h"
 #include "memory.h"
@@ -13,7 +13,7 @@ void invalidateAndRecompileIfWroteToOwnBlock(Hardware &hardware,
                                              uint16_t &currentAddress,
                                              uint64_t &returnAddress);
 
-void compileNextBlockIfNeeded(Hardware &hardware, asmjit::JitRuntime &rt,
+bool compileNextBlockIfNeeded(Hardware &hardware, asmjit::JitRuntime &rt,
                               Memory &memory, uint16_t &currentAddress);
 
 void markEndAddrTableToBasicBlock(Memory &memory,

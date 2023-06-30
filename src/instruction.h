@@ -4,7 +4,7 @@
 #include "hardware.h"
 #include "memory.h"
 #include "types.h"
-#include "constants.h"
+#include "globals.h"
 #include <asmjit/asmjit.h>
 #include <cstdlib>
 #include <optional>
@@ -505,7 +505,7 @@ void LD_B_VX(
   cc.cmp(tmp, (pc + 2) - 3);
   cc.jl(ljump);
   cc.cmp(tmp, bb->getEndAddr());
-  cc.jg(ljump);
+  cc.jge(ljump);
 
   bb->generateEpilogue(cc, hardwarebase, registers);
   retVal = cc.newUInt64();
@@ -573,7 +573,7 @@ void LD_I_VX(
   cc.cmp(tmp, (pc + 2) - instr.x());
   cc.jl(ljump);
   cc.cmp(tmp, bb->getEndAddr());
-  cc.jg(ljump);
+  cc.jge(ljump);
 
   bb->generateEpilogue(cc, hardwarebase, registers);
   retVal = cc.newUInt64();

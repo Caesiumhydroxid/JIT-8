@@ -8,7 +8,7 @@
 #include "hardware.h"
 #include "memory.h"
 #include "instruction.h"
-#include "constants.h"
+#include "globals.h"
 
 using namespace asmjit;
 
@@ -57,10 +57,10 @@ void BasicBlock::compile(Hardware &hardware, Memory &mem,asmjit::JitRuntime &rt)
     x86::Compiler cc(&code);
     cc.addFunc(FuncSignatureT<uint64_t>());
 
-    auto HARDWARE_BASE = cc.newUIntPtr();
-    cc.mov(HARDWARE_BASE,&hardware);
+    auto hardware_base_reg = cc.newUIntPtr();
+    cc.mov(hardware_base_reg,&hardware);
     std::array<x86::Gp,Hardware::AMOUNT_REGISTERS> registers;
-    generatePrologue(cc,HARDWARE_BASE,registers);
+    generatePrologue(cc,hardware_base_reg,registers);
     std::optional<Label> jumpLab = {};
     for(size_t i=0; i<info->instructions.size();i++){
         jumpingLocations.push_back(cc.newLabel());
@@ -72,7 +72,7 @@ void BasicBlock::compile(Hardware &hardware, Memory &mem,asmjit::JitRuntime &rt)
         std::cout << std::hex << unsigned(pc) << ": " << unsigned(instr.in) << std::endl;
         #endif 
         cc.bind(jumpingLocations[i]);
-        auto tempLabel = generateInstruction(instr,hardware,pc,HARDWARE_BASE,mem,cc,registers);
+        auto tempLabel = generateInstruction(instr,hardware,pc,hardware_base_reg,mem,cc,registers);
         if(jumpLab.has_value()){
             cc.bind(jumpLab.value());
         }
@@ -84,7 +84,11 @@ void BasicBlock::compile(Hardware &hardware, Memory &mem,asmjit::JitRuntime &rt)
             generateSleepCode(cc, hardware.slowdown);
         }
     }
-    generateEpilogue(cc,HARDWARE_BASE,registers);
+    generateEpilogue(cc,hardware_base_reg,registers);
+    auto retPc = cc.newUInt16();
+    cc.xor_(retPc.r64(),retPc.r64());
+    cc.mov(retPc,pc);
+    cc.ret(retPc);
     cc.endFunc();
     cc.finalize();
     Error err = rt.add(&fn,&code);
@@ -94,7 +98,7 @@ void BasicBlock::compile(Hardware &hardware, Memory &mem,asmjit::JitRuntime &rt)
         #endif
     }
     #if LOGGING
-    std::cout<<logger.data() << std::endl;
+    //std::cout<<logger.data() << std::endl;
     #endif
 }
 

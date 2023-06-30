@@ -60,6 +60,7 @@ public:
       if (isJumpInstruction(parsedInstr, prevInstr)) {
         break;
       }
+      
       prevInstr = parsedInstr;
     }
     blockInformation->endAddress = pos + (amountInstructions)*2;

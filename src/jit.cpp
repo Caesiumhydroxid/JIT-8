@@ -1,5 +1,7 @@
 #include "jit.h"
+#include "memory.h"
 #include "parser.h"
+#include <cstdlib>
 
 void deleteAllDirtyBlocks(Memory &memory, uint16_t dirtyAddress)
 {
@@ -60,29 +62,35 @@ void markEndAddrTableToBasicBlock(Memory &memory,
   }
 }
 
-void compileNextBlockIfNeeded(Hardware &hardware, asmjit::JitRuntime &rt,
+bool compileNextBlockIfNeeded(Hardware &hardware, asmjit::JitRuntime &rt,
                               Memory &memory, uint16_t &currentAddress)
 {
-  std::cout << "Compile: 0x" << std::hex << currentAddress << std::endl;
   if (memory.jumpTable[currentAddress] != nullptr)
   {
+    if(memory.jumpTable[currentAddress]->getEndAddr()-1 >= Memory::MEMORY_SIZE)
+    {
+      exit(EXIT_FAILURE);
+    }
     if (memory.jumpTable[currentAddress]->getEndAddr()-1 ==
         memory
             .endAddressTable[memory.jumpTable[currentAddress]->getEndAddr()-1])
     { // Block not dirty
-      return;
+      return true;
     }
     deleteAllDirtyBlocks(memory,
                          memory.jumpTable[currentAddress]->getEndAddr() - 1);
   }
   if (memory.jumpTable[currentAddress] == nullptr)
   {
+    #if LOGGING
+    std::cout << "Compile: 0x" << std::hex << currentAddress << std::endl;
+    #endif
     auto res = Parser::parseBasicBlock(memory.memory, currentAddress);
     if(res->startingAddress == res->endAddress)
     {  
       // An empty block signals that the next instruction to execute is an unknown instruction
       std::cerr << "Encountered unknown instruction at 0x" << std::hex << currentAddress << ", check rom?" << std::endl;
-      //exit(EXIT_FAILURE);
+      return false;
     }
     auto basicBlock =
         std::make_unique<BasicBlock>(std::move(res), hardware, memory, rt);
@@ -90,6 +98,7 @@ void compileNextBlockIfNeeded(Hardware &hardware, asmjit::JitRuntime &rt,
     markEndAddrTableToBasicBlock(memory, basicBlock);
     memory.jumpTable[currentAddress] = std::move(basicBlock);
   }
+  return true;
 }
 
 void invalidateAndRecompileIfWroteToOwnBlock(Hardware &hardware,

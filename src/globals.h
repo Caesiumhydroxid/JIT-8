@@ -1,5 +1,5 @@
 #pragma once
 
-#define LOGGING 1
+#define LOGGING 0
 extern bool iRegIncrementQuirk;
 extern bool shiftQuirk;
