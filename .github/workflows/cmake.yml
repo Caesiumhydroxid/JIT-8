@@ -29,7 +29,7 @@ jobs:
           sudo apt-get install libx11-dev
           sudo apt-get install libxrandr-dev
           sudo apt-get install libfreetype6-dev
-          sudo apt-get install libglew1.5-d ev
+          sudo apt-get install libglew1.5-dev
           sudo apt-get install libjpeg8-dev
           sudo apt-get install libsndfile1-dev
           sudo apt-get install libopenal-dev
@@ -45,7 +45,7 @@ jobs:
           sudo apt-get install libx11-dev
           sudo apt-get install libxrandr-dev
           sudo apt-get install libfreetype6-dev
-          sudo apt-get install libglew1.5-d ev
+          sudo apt-get install libglew1.5-dev
           sudo apt-get install libjpeg8-dev
           sudo apt-get install libsndfile1-dev
           sudo apt-get install libopenal-dev
